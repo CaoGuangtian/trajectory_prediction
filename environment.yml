@@ -1,0 +1,11 @@
+name: traj-pre
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - dash==4.4.1
+      - duckdb==1.5.6
+      - plotly==7.1.0
+      - pyarrow==25.0.0
