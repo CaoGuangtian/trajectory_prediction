@@ -17,7 +17,7 @@ http://127.0.0.1:8050
 默认数据文件：
 
 ```text
-data/raw/openskyDataset/subset_1/set_1.parquet
+data/openskyDataset/subset_1/set_1.parquet
 ```
 
 如需使用其他同结构 Parquet，可以在启动前设置 `TRAJECTORY_DATA_PATH`。

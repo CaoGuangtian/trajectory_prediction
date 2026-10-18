@@ -22,8 +22,10 @@ from pathlib import Path
 from typing import Iterable, Iterator
 
 
-DEFAULT_INPUT_DIR = Path("data/raw/openskyDataset/subset_1")
-DEFAULT_OUTPUT_DIR = Path("data/processed/civil_data_for_realtime_web_show")
+DEFAULT_INPUT_DIR = Path("data/openskyDataset/subset_1")
+DEFAULT_OUTPUT_DIR = Path(
+    "data/openskyDataset/subset_1/civil_data_for_realtime_web_show"
+)
 MAIN_COLUMNS = (
     "id",
     "timeAtServer",

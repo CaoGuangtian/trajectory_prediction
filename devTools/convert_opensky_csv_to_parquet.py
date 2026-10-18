@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_INPUT = Path("data/raw/openskyDataset/subset_1/set_1.csv")
+DEFAULT_INPUT = Path("data/openskyDataset/subset_1/set_1.csv")
 EXPECTED_COLUMNS = (
     "id",
     "timeAtServer",

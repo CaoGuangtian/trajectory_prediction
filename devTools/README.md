@@ -2,6 +2,8 @@
 
 本目录存放项目开发过程中使用的辅助脚本。本说明统一记录这些脚本的用途、运行环境和调用方法。
 
+`data/` 采用以数据集为中心的目录结构：每个一级目录是一套数据集；如果数据集包含内部子集，原始文件、格式转换文件和处理结果都放在对应的 `subset_x/` 中。当前 OpenSky 流程使用 `data/openskyDataset/subset_1/`。
+
 除非另有说明，命令都应在 `trajectory_prediction` 项目根目录执行，并使用 Conda 虚拟环境 `traj-pre`：
 
 ```powershell
@@ -17,13 +19,13 @@ conda run -n traj-pre python <脚本路径> [参数]
 脚本的默认输入为：
 
 ```text
-data/raw/openskyDataset/subset_1/set_1.csv
+data/openskyDataset/subset_1/set_1.csv
 ```
 
 默认输出到输入文件旁边：
 
 ```text
-data/raw/openskyDataset/subset_1/set_1.parquet
+data/openskyDataset/subset_1/set_1.parquet
 ```
 
 运行默认转换：
@@ -36,8 +38,8 @@ conda run -n traj-pre python devTools/convert_opensky_csv_to_parquet.py
 
 ```powershell
 conda run -n traj-pre python devTools/convert_opensky_csv_to_parquet.py `
-  --input data/raw/openskyDataset/subset_1/set_1.csv `
-  --output data/raw/openskyDataset/subset_1/set_1.parquet
+  --input data/openskyDataset/subset_1/set_1.csv `
+  --output data/openskyDataset/subset_1/set_1.parquet
 ```
 
 常用参数：
@@ -73,13 +75,13 @@ conda run -n traj-pre python devTools/prepare_opensky_realtime_demo.py
 默认输入：
 
 ```text
-data/raw/openskyDataset/subset_1
+data/openskyDataset/subset_1
 ```
 
 默认输出：
 
 ```text
-data/processed/civil_data_for_realtime_web_show/20250510.csv
+data/openskyDataset/subset_1/civil_data_for_realtime_web_show/20250510.csv
 ```
 
 筛选、调度和并发统计保存在输出目录的 `report/` 子目录。脚本会完整扫描约 1.22 GB 的主文件两次，运行时间取决于磁盘速度，但不会把整份 CSV 一次性载入内存。
@@ -109,7 +111,7 @@ conda run -n traj-pre python devTools/prepare_opensky_realtime_demo.py `
 
 ```powershell
 python tcp_dispatcher_demo/dataTransform/scripts/convert_extracted_csv_to_json.py `
-  --input-dir ../trajectory_prediction/data/processed/civil_data_for_realtime_web_show `
+  --input-dir ../trajectory_prediction/data/openskyDataset/subset_1/civil_data_for_realtime_web_show `
   --output-dir tcp_dispatcher_demo/dataTransform/data/opensky_demo_json
 ```
 

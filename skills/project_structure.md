@@ -45,106 +45,72 @@ They should connect through saved artifacts and manifests.
 
 ## Data Directory
 
-Use this top-level data structure:
+Use a dataset-centered top-level structure:
 
 ```text
 data/
-  raw/
-  canonical_cache/
-  processed/
-  samples/
+  <dataset_name>/
+    <source files or internal subsets>/
 ```
 
-### Raw Data
+Each direct child of `data/` is one dataset. Do not add global `raw/` or
+`processed/` layers.
 
-Under `data/raw/`, each direct child directory is one dataset.
+If an external dataset has its own subsets, keep the source files and all data
+processing results inside the relevant subset:
+
+```text
+data/
+  openskyDataset/
+    subset_1/
+      set_1.csv
+      set_1.parquet
+      set_1_aircraft.csv
+      set_1_sensors.csv
+      NOTE.txt
+      LICENSE.txt
+      civil_data_for_realtime_web_show/
+        20250510.csv
+        report/
+    subset_2/
+    subset_3/
+```
+
+Important interpretation:
+
+- `openskyDataset` represents one dataset.
+- `subset_1` is internal structure of `openskyDataset`, not a project-level dataset split.
+- Original source files live directly inside the corresponding subset.
+- Storage-format conversions such as `set_1.parquet` are treated as source
+  inputs for downstream work and stay beside the original CSV.
+- Every processing result belongs in a clearly named child directory of the
+  dataset or subset that produced it.
+- Project-level code should identify the dataset as `openskyDataset`.
+- Dataset-internal subsets should be handled by the dataset reader/config.
+
+### Derived Data
+
+Canonical caches, preprocessing artifacts, and reusable training samples stay
+under their source dataset or subset. Use descriptive result-directory names
+and manifests to identify the processing stage and configuration.
 
 Example:
 
 ```text
 data/
-  raw/
-    openskyDataset/
-      subset_1/
-        set_1.csv
-        set_1_aircraft.csv
-        set_1_sensors.csv
-        NOTE.txt
-        LICENSE.txt
-      subset_1.zip
-      manifest.yaml
-```
-
-Important interpretation:
-
-- `raw/openskyDataset` represents one dataset.
-- `subset_1` is internal structure of `openskyDataset`, not a project-level dataset split.
-- Project-level code should identify the dataset as `openskyDataset`.
-- Dataset-internal subsets should be handled by the dataset reader/config.
-
-### Canonical Cache
-
-Canonical data is primarily an interface/schema output by the dataset reader.
-It does not always need to be saved.
-
-When cached, use:
-
-```text
-data/
-  canonical_cache/
-    openskyDataset/
+  openskyDataset/
+    subset_1/
       canonical_v1_<config_hash>/
         tracks.parquet
         manifest.yaml
-```
-
-### Processed Data
-
-Preprocessed artifacts should usually be saved because they are the key boundary
-between preprocessing and prediction.
-
-Use:
-
-```text
-data/
-  processed/
-    openskyDataset/
       kalman_singer_dt5_win24_<config_hash>/
         tracks.parquet
         manifest.yaml
-      imm_smooth_dt5_win24_<config_hash>/
-        tracks.parquet
-        manifest.yaml
-```
-
-Rule:
-
-```text
-data/processed/<dataset_name>/<preprocess_variant>/
-```
-
-### Samples
-
-Training samples should be saved when useful for reuse across models.
-
-Use:
-
-```text
-data/
-  samples/
-    openskyDataset/
-      kalman_singer_dt5_win24_<config_hash>/
         input60_pred10_xyz_zscore_<config_hash>/
           train.npz
           val.npz
           test.npz
           manifest.yaml
-```
-
-Rule:
-
-```text
-data/samples/<dataset_name>/<preprocess_variant>/<sample_variant>/
 ```
 
 ## Outputs Directory
@@ -229,15 +195,8 @@ It should not own training, preprocessing, or inference logic.
 
 Do not require fixed `tiny/` or `sample/` directories.
 
-For development, the user may put selected data anywhere and pass an input directory.
-The important rule is that the input directory must be explicit about its stage:
-
-- raw
-- canonical
-- processed
-- samples
-
-Prefer a `manifest.yaml` in selected-data directories.
+For development, the user may select any dataset or internal subset explicitly.
+Derived directory names or their `manifest.yaml` must state the processing role.
 Do not infer data stage only from a vague folder name like `test_data`.
 
 ## Naming Preferences
