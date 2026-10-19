@@ -16,6 +16,7 @@ from trajectory_prediction.models.patchtst.data import (
     compute_normalization_scales,
     load_normalization_scales,
     save_normalization_scales,
+    transform_history_inputs,
 )
 
 
@@ -49,6 +50,9 @@ class PatchTSTDataTests(unittest.TestCase):
         pq.write_table(pa.Table.from_pylist(rows), self.parquet_path)
         self.config = load_patchtst_config(
             ROOT / "configs/models/patchtst_raw_v1.yaml"
+        )
+        self.smooth_config = load_patchtst_config(
+            ROOT / "configs/models/patchtst_causal_smooth_v1.yaml"
         )
         self.source = PatchTSTSource(1, self.parquet_path)
 
@@ -90,6 +94,50 @@ class PatchTSTDataTests(unittest.TestCase):
         config = replace(self.config, trusted_values=("true",))
         corpus = TrajectoryWindowCorpus(self.source_list, "test", config, 1)
         self.assertEqual(len(corpus), 0)
+
+    def test_causal_ema_smooths_only_up_and_recenters_origin(self) -> None:
+        history = np.asarray(
+            [[[1.0, 2.0, 0.0], [3.0, 4.0, 10.0], [5.0, 6.0, 0.0], [7.0, 8.0, 10.0]]],
+            dtype=np.float32,
+        )
+        config = replace(self.smooth_config, ema_alpha=0.5)
+        transformed = transform_history_inputs(history, config)
+
+        np.testing.assert_array_equal(transformed[:, :, :2], history[:, :, :2])
+        np.testing.assert_allclose(
+            transformed[0, :, 2],
+            np.asarray([-6.25, -1.25, -3.75, 0.0], dtype=np.float32),
+        )
+        np.testing.assert_array_equal(history[0, :, 2], [0.0, 10.0, 0.0, 10.0])
+
+    def test_smooth_variant_changes_only_history_input(self) -> None:
+        raw_corpus = TrajectoryWindowCorpus(self.source_list, "train", self.config, 1)
+        smooth_corpus = TrajectoryWindowCorpus(
+            self.source_list, "train", self.smooth_config, 1
+        )
+        raw_batch = raw_corpus.batch([0])
+        smooth_batch = smooth_corpus.batch([0])
+
+        np.testing.assert_allclose(
+            smooth_batch.history_enu[:, :, :2], raw_batch.history_enu[:, :, :2]
+        )
+        self.assertFalse(
+            np.allclose(
+                smooth_batch.history_enu[:, :, 2], raw_batch.history_enu[:, :, 2]
+            )
+        )
+        np.testing.assert_allclose(smooth_batch.history_enu[:, -1], 0.0, atol=1e-5)
+        np.testing.assert_array_equal(smooth_batch.future_enu, raw_batch.future_enu)
+        np.testing.assert_array_equal(smooth_batch.target_mask, raw_batch.target_mask)
+
+    def test_smoothing_does_not_change_normalization_scales(self) -> None:
+        raw_corpus = TrajectoryWindowCorpus(self.source_list, "train", self.config, 1)
+        smooth_corpus = TrajectoryWindowCorpus(
+            self.source_list, "train", self.smooth_config, 1
+        )
+        raw_scales = compute_normalization_scales(raw_corpus, 4, 1.0)
+        smooth_scales = compute_normalization_scales(smooth_corpus, 4, 1.0)
+        np.testing.assert_array_equal(raw_scales.array, smooth_scales.array)
 
     @property
     def source_list(self) -> list[PatchTSTSource]:

@@ -85,3 +85,23 @@ python -s -m trajectory_prediction.cli.evaluate_patchtst --subset 1 --device aut
 
 模型骨架适配自本地 `D:\code\RealTimeTrajectory\reference\patchTST` 中的官方 PatchTST 实现，具体许可和修改范围见 `THIRD_PARTY_NOTICES.md`。其通用 CSV 数据集、随机拆分、平滑代码和实验循环不适用于本项目，未被接入。
 
+## PatchTST Causal Smooth
+
+`patchtst_causal_smooth_v1` 是与 Raw 配对的输入消融版本。两者使用相同的 PatchTST 骨架、数据拆分、窗口集合、训练参数和原始训练集归一化尺度。唯一的建模差异是 Smooth 版对 60 点历史窗口的 Up 通道执行从旧到新的单边 EMA，默认 `alpha=0.4`，随后在已经观测到的预测起点重新居中。East 和 North 不变，未来 60 点标签不做平滑。
+
+训练：
+
+```powershell
+$env:PYTHONPATH = "src"
+python -s -m trajectory_prediction.cli.train_patchtst --config configs/models/patchtst_causal_smooth_v1.yaml --subset 1 --device auto
+```
+
+训练完成并冻结 checkpoint 后评估：
+
+```powershell
+$env:PYTHONPATH = "src"
+python -s -m trajectory_prediction.cli.evaluate_patchtst --config configs/models/patchtst_causal_smooth_v1.yaml --subset 1 --device auto
+```
+
+Smooth 产物独立写入 `outputs/models/patchtst/subset_1/patchtst_causal_smooth_v1/`，不会覆盖 Raw 结果。在远程 Linux shell 中将 PowerShell 的 `$env:PYTHONPATH = "src"` 替换为 `export PYTHONPATH=src`。
+

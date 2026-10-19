@@ -30,6 +30,10 @@ class PatchTSTConfig:
     exclude_suspicious_targets: bool
     normalization_max_origins: int
     normalization_min_scale_m: float
+    input_transform: str
+    smooth_channels: tuple[str, ...]
+    ema_alpha: float
+    smooth_recenter_at_origin: bool
     patch_length: int
     patch_stride: int
     patch_padding_end: bool
@@ -87,6 +91,10 @@ class PatchTSTConfig:
             "exclude_suspicious_targets": self.exclude_suspicious_targets,
             "normalization_max_origins": self.normalization_max_origins,
             "normalization_min_scale_m": self.normalization_min_scale_m,
+            "input_transform": self.input_transform,
+            "smooth_channels": list(self.smooth_channels),
+            "ema_alpha": self.ema_alpha,
+            "smooth_recenter_at_origin": self.smooth_recenter_at_origin,
             "patch_length": self.patch_length,
             "patch_stride": self.patch_stride,
             "patch_padding_end": self.patch_padding_end,
@@ -160,6 +168,14 @@ def load_patchtst_config(path: Path) -> PatchTSTConfig:
         exclude_suspicious_targets=bool(required("exclude_suspicious_targets")),
         normalization_max_origins=int(required("normalization_max_origins")),
         normalization_min_scale_m=float(required("normalization_min_scale_m")),
+        input_transform=str(payload.get("input_transform", "none")).lower(),
+        smooth_channels=tuple(
+            str(value).lower() for value in payload.get("smooth_channels", [])
+        ),
+        ema_alpha=float(payload.get("ema_alpha", 0.4)),
+        smooth_recenter_at_origin=bool(
+            payload.get("smooth_recenter_at_origin", True)
+        ),
         patch_length=int(required("patch_length")),
         patch_stride=int(required("patch_stride")),
         patch_padding_end=bool(required("patch_padding_end")),
@@ -218,6 +234,26 @@ def _validate(config: PatchTSTConfig) -> None:
         raise ValueError("Origin strides must be positive.")
     if config.normalization_max_origins < 1 or config.normalization_min_scale_m <= 0:
         raise ValueError("Normalization settings are invalid.")
+    if config.input_transform not in {"none", "causal_ema"}:
+        raise ValueError("input_transform must be none or causal_ema.")
+    valid_channels = {"east", "north", "up"}
+    if len(config.smooth_channels) != len(set(config.smooth_channels)) or any(
+        channel not in valid_channels for channel in config.smooth_channels
+    ):
+        raise ValueError(
+            "smooth_channels must contain unique east, north, or up values."
+        )
+    if config.input_transform == "none" and config.smooth_channels:
+        raise ValueError("smooth_channels must be empty when input_transform is none.")
+    if config.input_transform == "causal_ema":
+        if not config.smooth_channels:
+            raise ValueError("causal_ema requires at least one smooth channel.")
+        if not 0.0 < config.ema_alpha <= 1.0:
+            raise ValueError("ema_alpha must be in (0, 1].")
+        if not config.smooth_recenter_at_origin:
+            raise ValueError(
+                "causal_ema must recenter at the forecast origin for local ENU input."
+            )
     if not 1 <= config.patch_length <= config.history_points or config.patch_stride < 1:
         raise ValueError("Patch length and stride are invalid.")
     if config.model_dimension < 1 or config.attention_heads < 1:

@@ -21,6 +21,8 @@ class PatchTSTModelTests(unittest.TestCase):
 
         config = load_patchtst_config(ROOT / "configs/models/patchtst_raw_v1.yaml")
         self.assertEqual(config.implementation_version, "reference_aligned_patchtst_backbone_v1")
+        self.assertEqual(config.input_transform, "none")
+        self.assertEqual(config.smooth_channels, ())
         self.assertEqual(config.encoder_normalization, "BatchNorm")
         self.assertTrue(config.residual_attention)
         self.assertFalse(config.pre_norm)
@@ -44,6 +46,21 @@ class PatchTSTModelTests(unittest.TestCase):
         runtime = resolve_runtime_device("auto", 0, True, torch)
         self.assertEqual(runtime.resolved, "cpu")
         self.assertFalse(runtime.mixed_precision)
+
+    def test_causal_smooth_config_keeps_the_same_backbone(self) -> None:
+        from trajectory_prediction.models.patchtst import load_patchtst_config
+
+        raw = load_patchtst_config(ROOT / "configs/models/patchtst_raw_v1.yaml")
+        smooth = load_patchtst_config(
+            ROOT / "configs/models/patchtst_causal_smooth_v1.yaml"
+        )
+        self.assertEqual(smooth.input_transform, "causal_ema")
+        self.assertEqual(smooth.smooth_channels, ("up",))
+        self.assertEqual(smooth.ema_alpha, 0.4)
+        self.assertTrue(smooth.smooth_recenter_at_origin)
+        self.assertEqual(smooth.implementation_version, raw.implementation_version)
+        self.assertEqual(smooth.model_dimension, raw.model_dimension)
+        self.assertEqual(smooth.encoder_layers, raw.encoder_layers)
 
 
 if __name__ == "__main__":

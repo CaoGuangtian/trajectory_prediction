@@ -60,7 +60,8 @@
 
 ## PatchTST 实验约束
 
-- 第一版为 `patchtst_raw_v1`，不对高度或其他输入额外平滑；后续因果平滑增强必须建立独立版本，不能覆盖 Raw 对照。
+- `patchtst_raw_v1` 不对高度或其他输入额外平滑，作为 Raw 对照保留。
+- `patchtst_causal_smooth_v1` 仅对历史输入的 Up 通道做单边因果 EMA（默认 `alpha=0.4`），在预测起点重新居中；未来标签保持为未经模型平滑的标准化轨迹。其骨架、数据划分与训练参数必须和 Raw 对照一致，不能覆盖 Raw 产物。
 - `patchtst_raw_v1` 的模型骨架与官方 PatchTST 对齐：channel-independent encoder、residual attention、BatchNorm、可学习位置编码、RevIN 和 flatten prediction head；不得用简化 Transformer 冒充该基线。
 - 每个窗口使用预测起点局部 ENU 三通道；不使用 `aircraft` ID，也不跨 `segment_id`。
 - 输入变换只能使用截至预测起点的信息；监督标签和最终误差都以项目的标准化未来轨迹为准，不能换成模型平滑后的未来标签。

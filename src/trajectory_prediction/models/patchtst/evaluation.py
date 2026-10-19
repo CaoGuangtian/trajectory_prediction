@@ -142,6 +142,17 @@ def evaluate_patchtst(
     evaluated_targets = sum(
         int(record["evaluated_targets"]) for record in horizon_records
     )
+    if config.input_transform == "causal_ema":
+        input_note = (
+            "The model input applies a history-only causal EMA to "
+            f"{', '.join(config.smooth_channels)} (alpha={config.ema_alpha}) and "
+            "recentres the transformed history at the observed forecast origin."
+        )
+    else:
+        input_note = (
+            "The model input is the unsmoothed standardized trajectory represented "
+            "in forecast-origin local ENU coordinates."
+        )
     manifest: dict[str, object] = {
         "artifact": "patchtst_evaluation",
         "model_type": config.model_type,
@@ -183,9 +194,9 @@ def evaluate_patchtst(
             "model_parameters": model_parameter_count(model),
         },
         "notes": [
-            "The model input is the unsmoothed standardized trajectory represented in forecast-origin local ENU coordinates.",
+            input_note,
             "Input and output lengths are 60 one-hertz points; every prediction is direct and open-loop.",
-            "Normalization was fitted only on train; checkpoint selection used validation; this command alone reads test.",
+            "Normalization was fitted on untransformed train windows only; checkpoint selection used validation; this command alone reads test.",
             "The target remains the canonical standardized future trajectory, not a model-smoothed surrogate.",
             "Interpolated and suspicious target points are excluded by the shared quality mask without dropping the origin.",
             "Horizontal error uses great-circle distance in metres and vertical error uses geometric altitude.",

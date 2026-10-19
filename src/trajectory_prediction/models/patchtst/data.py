@@ -31,6 +31,7 @@ SOURCE_COLUMNS = (
     "is_interpolated",
     "is_speed_suspicious",
 )
+INPUT_CHANNEL_INDICES = {"east": 0, "north": 1, "up": 2}
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +152,8 @@ class TrajectoryWindowCorpus:
         self,
         indices: np.ndarray | list[int],
         scales: NormalizationScales | None = None,
+        *,
+        apply_input_transform: bool = True,
     ) -> WindowBatch:
         item_indices = np.asarray(indices, dtype=np.int64)
         if item_indices.ndim != 1:
@@ -222,6 +225,8 @@ class TrajectoryWindowCorpus:
             target_latitude[rows] = segment.latitude[future_indices]
             target_altitude[rows] = segment.geo_altitude[future_indices]
 
+        if apply_input_transform:
+            history = transform_history_inputs(history, self.config)
         if scales is not None:
             scale_array = scales.array[None, None, :]
             history /= scale_array
@@ -241,6 +246,40 @@ class TrajectoryWindowCorpus:
         )
 
 
+def transform_history_inputs(
+    history_enu: np.ndarray,
+    config: PatchTSTConfig,
+) -> np.ndarray:
+    """Apply the configured history-only transform without touching targets.
+
+    The EMA runs from the oldest observation towards forecast time. Recentring
+    uses the already-observed value at forecast time so local ENU inputs retain
+    a zero-valued origin. No point after the forecast origin is available here.
+    """
+
+    if history_enu.ndim != 3 or history_enu.shape[-1] != 3:
+        raise ValueError("PatchTST history must have shape [batch, time, 3].")
+    if config.input_transform == "none":
+        return history_enu
+    if config.input_transform != "causal_ema":
+        raise ValueError(f"Unsupported input transform: {config.input_transform}")
+
+    transformed = history_enu.copy()
+    alpha = np.asarray(config.ema_alpha, dtype=transformed.dtype)
+    one_minus_alpha = np.asarray(1.0 - config.ema_alpha, dtype=transformed.dtype)
+    for channel_name in config.smooth_channels:
+        channel_index = INPUT_CHANNEL_INDICES[channel_name]
+        values = transformed[:, :, channel_index]
+        for time_index in range(1, values.shape[1]):
+            values[:, time_index] = (
+                alpha * values[:, time_index]
+                + one_minus_alpha * values[:, time_index - 1]
+            )
+        if config.smooth_recenter_at_origin:
+            values -= values[:, -1, None]
+    return transformed
+
+
 def compute_normalization_scales(
     corpus: TrajectoryWindowCorpus,
     maximum_origins: int,
@@ -258,7 +297,10 @@ def compute_normalization_scales(
     sum_squares = np.zeros(3, dtype=np.float64)
     counts = np.zeros(3, dtype=np.int64)
     for start in range(0, sample_count, batch_size):
-        batch = corpus.batch(indices[start : start + batch_size])
+        batch = corpus.batch(
+            indices[start : start + batch_size],
+            apply_input_transform=False,
+        )
         history = batch.history_enu.astype(np.float64)
         sum_squares += np.square(history).sum(axis=(0, 1))
         counts += history.shape[0] * history.shape[1]

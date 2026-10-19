@@ -237,6 +237,9 @@ def train_patchtst(
             "model_selection_split": "validation",
             "test_split_accessed": False,
             "normalization_fitted_on": "train",
+            "normalization_input_transform_applied": False,
+            "model_input_transform": config.input_transform,
+            "target_transform": "none",
         },
         "runtime": {
             "requested_device": runtime.requested,
