@@ -772,7 +772,12 @@ def _fill_singer_model(
             q[:, start + row, start + column] = scale * value
 
 
-def _initial_covariance(batch_size: int, scale: float) -> np.ndarray:
+def _initial_covariance(
+    batch_size: int,
+    scale: float,
+    model_count: int | None = None,
+) -> np.ndarray:
+    count = len(MODEL_NAMES) if model_count is None else int(model_count)
     diagonal = np.tile(
         np.array(
             [
@@ -787,10 +792,10 @@ def _initial_covariance(batch_size: int, scale: float) -> np.ndarray:
                 scale * 100.0,
             ]
         ),
-        (batch_size, len(MODEL_NAMES), 1),
+        (batch_size, count, 1),
     )
     covariance = np.zeros(
-        (batch_size, len(MODEL_NAMES), STATE_DIM, STATE_DIM),
+        (batch_size, count, STATE_DIM, STATE_DIM),
         dtype=float,
     )
     indices = np.arange(STATE_DIM)
@@ -847,8 +852,9 @@ def _measurement_update(
         return states, covariance, probabilities
     updated_states = states.copy()
     updated_covariance = covariance.copy()
-    log_likelihoods = np.zeros((active.size, len(MODEL_NAMES)), dtype=float)
-    for model_index in range(len(MODEL_NAMES)):
+    model_count = states.shape[1]
+    log_likelihoods = np.zeros((active.size, model_count), dtype=float)
+    for model_index in range(model_count):
         model_states = states[active, model_index]
         model_covariance = covariance[active, model_index]
         innovation = measurements[active] - model_states[:, POSITION_INDICES]

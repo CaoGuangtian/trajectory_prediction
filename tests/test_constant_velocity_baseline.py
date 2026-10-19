@@ -61,6 +61,7 @@ class ConstantVelocityBaselineTests(unittest.TestCase):
             dataset_root=self.root,
             subsets=(1,),
             split="test",
+            required_history_points=60,
             history_seconds=30,
             prediction_horizons_seconds=(1, 5),
             origin_stride_seconds=1,
@@ -121,7 +122,7 @@ class ConstantVelocityBaselineTests(unittest.TestCase):
             "r", encoding="utf-8", newline=""
         ) as handle:
             rows = list(csv.DictReader(handle))
-        self.assertEqual(int(rows[0]["candidate_origins"]), 100)
+        self.assertEqual(int(rows[0]["candidate_origins"]), 67)
         self.assertGreater(float(rows[0]["horizontal_rmse_m"]), 1.0)
 
 

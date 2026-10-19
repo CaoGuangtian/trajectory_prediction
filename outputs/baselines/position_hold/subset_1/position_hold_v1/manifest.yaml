@@ -1,6 +1,9 @@
 {
   "artifact": "position_hold_baseline_evaluation",
-  "created_at_utc": "2026-10-19T02:49:09.762732+00:00",
+  "model_type": "position_hold",
+  "display_name": "Position Hold",
+  "evaluation_protocol": "complete-window causal open-loop",
+  "created_at_utc": "2026-10-19T10:25:15.755374+00:00",
   "configuration": {
     "version": "position_hold_v1",
     "dataset_root": "data/openskyDataset",
@@ -8,7 +11,8 @@
       1
     ],
     "split": "test",
-    "history_seconds": 30,
+    "required_history_points": 60,
+    "history_points": 60,
     "prediction_horizons_seconds": [
       1,
       5,
@@ -25,7 +29,7 @@
     "output_root": "outputs/baselines/position_hold",
     "duckdb_memory_limit": "512MB",
     "duckdb_threads": 1,
-    "config_hash": "e9019d066dfa"
+    "config_hash": "c6e2e942b5ae"
   },
   "sources": [
     {
@@ -44,11 +48,11 @@
     "selected_subsets": [
       1
     ],
-    "evaluated_segments": 526,
-    "segment_horizon_rows": 3156,
-    "candidate_predictions": 3104613,
-    "evaluated_targets": 2793169,
-    "overall_target_coverage": 0.8996834710155501
+    "evaluated_segments": 524,
+    "segment_horizon_rows": 3144,
+    "candidate_predictions": 2969640,
+    "evaluated_targets": 2689490,
+    "overall_target_coverage": 0.9056619657601594
   },
   "notes": [
     "The prediction at every horizon is the last observed position at the forecast origin.",

@@ -10,7 +10,7 @@ import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Any, Callable, Iterable, Iterator
 
 import numpy as np
 import pyarrow as pa
@@ -166,13 +166,41 @@ class _MetricAccumulator:
         }
 
 
+PredictionFunction = Callable[
+    [np.ndarray, np.ndarray, tuple[int, ...], Any],
+    Any,
+]
+
+
 def evaluate_imm_kalman(
     sources: Iterable[ImmKalmanSource],
     config: ImmKalmanConfig,
     output_directory: Path,
     overwrite: bool = False,
 ) -> dict[str, object]:
-    """Evaluate IMM-CV-CT-Singer without persisting per-origin predictions."""
+    """Evaluate the gated motion IMM without persisting per-origin predictions."""
+
+    return evaluate_imm_model(
+        sources,
+        config,
+        output_directory,
+        predictor=predict_imm_batch,
+        model_names=MODEL_NAMES,
+        artifact="gated_motion_imm_evaluation",
+        overwrite=overwrite,
+    )
+
+
+def evaluate_imm_model(
+    sources: Iterable[ImmKalmanSource],
+    config: Any,
+    output_directory: Path,
+    predictor: PredictionFunction,
+    model_names: tuple[str, ...],
+    artifact: str,
+    overwrite: bool = False,
+) -> dict[str, object]:
+    """Evaluate a causal common-state IMM predictor with shared cohort rules."""
 
     selected_sources = tuple(sorted(sources, key=lambda item: item.subset_id))
     if not selected_sources:
@@ -205,7 +233,7 @@ def evaluate_imm_kalman(
     evaluated_segment_keys: set[tuple[int, int]] = set()
     unique_origins = 0
     fallback_origins = 0
-    probability_sum = np.zeros(len(MODEL_NAMES), dtype=float)
+    probability_sum = np.zeros(len(model_names), dtype=float)
     probability_count = 0
     maneuver_origins = 0
     turn_maneuver_origins = 0
@@ -213,7 +241,7 @@ def evaluate_imm_kalman(
 
     for source in selected_sources:
         for segment in _iter_segments(source, config):
-            result = _evaluate_segment(segment, config)
+            result = _evaluate_segment(segment, config, predictor, model_names)
             if result is None:
                 continue
             (
@@ -267,16 +295,66 @@ def evaluate_imm_kalman(
     mean_probabilities = (
         probability_sum / probability_count
         if probability_count
-        else np.zeros(len(MODEL_NAMES), dtype=float)
+        else np.zeros(len(model_names), dtype=float)
     )
-    manifest: dict[str, object] = {
-        "artifact": "imm_kalman_model_evaluation",
-        "model_type": "imm_kalman",
-        "display_name": (
-            "IMM · gated CV/CT/Singer"
-            if config.motion_gate_enabled
-            else "IMM · CV/CT/Singer"
+    gate_enabled = bool(getattr(config, "motion_gate_enabled", False))
+    notes = [
+        "Every forecast uses exactly history_seconds one-hertz points ending at the origin.",
+        "Every candidate origin has a complete window through the largest configured horizon.",
+        "IMM parameters and posterior state use only observations at or before the forecast origin.",
+        "Forecasting is strictly open-loop; no future truth updates the filter.",
+        "Interpolated or suspicious history points can be skipped as measurement updates.",
+        "Insufficient or numerically invalid histories use the model-specific causal fallback without dropping the origin.",
+        "Horizontal error uses the WGS84 great-circle distance in metres.",
+        "Barometric-altitude metrics are retained as null-compatible columns; this model predicts geometric altitude only.",
+        "Prediction windows never cross segment_id boundaries.",
+        "No per-origin prediction rows or model-input windows are persisted.",
+        "JSON syntax is used because JSON is a valid YAML 1.2 subset.",
+    ]
+    if gate_enabled:
+        notes[4:4] = [
+            "The causal maneuver gate routes non-maneuver origins to a recent-window least-squares constant-velocity forecast.",
+            "CT and Singer are allowed only after two consecutive smoothed history blocks show directionally consistent turn or acceleration evidence.",
+        ]
+    statistics: dict[str, object] = {
+        "selected_subsets": subset_ids,
+        "evaluated_segments": len(evaluated_segment_keys),
+        "segment_horizon_rows": segment_table.num_rows,
+        "unique_prediction_origins": unique_origins,
+        "fallback_origins": fallback_origins,
+        "fallback_rate": fallback_origins / unique_origins if unique_origins else 0.0,
+        "candidate_predictions": candidate_predictions,
+        "evaluated_targets": evaluated_targets,
+        "overall_target_coverage": (
+            evaluated_targets / candidate_predictions if candidate_predictions else 0.0
         ),
+        **{
+            f"mean_model_probability_{name}": float(mean_probabilities[index])
+            for index, name in enumerate(model_names)
+        },
+    }
+    if gate_enabled:
+        statistics.update(
+            {
+                "constant_velocity_fallback_origins": fallback_origins,
+                "constant_velocity_fallback_rate": (
+                    fallback_origins / unique_origins if unique_origins else 0.0
+                ),
+                "maneuver_gated_origins": maneuver_origins,
+                "maneuver_gated_rate": maneuver_origins / unique_origins if unique_origins else 0.0,
+                "turn_maneuver_origins": turn_maneuver_origins,
+                "turn_maneuver_rate": turn_maneuver_origins / unique_origins if unique_origins else 0.0,
+                "acceleration_maneuver_origins": acceleration_maneuver_origins,
+                "acceleration_maneuver_rate": (
+                    acceleration_maneuver_origins / unique_origins if unique_origins else 0.0
+                ),
+                "ols_cv_routed_origins": unique_origins - maneuver_origins,
+            }
+        )
+    manifest: dict[str, object] = {
+        "artifact": artifact,
+        "model_type": config.model_type,
+        "display_name": config.display_name,
         "evaluation_protocol": "complete-window causal open-loop",
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "configuration": config.as_manifest_dict(),
@@ -285,60 +363,8 @@ def evaluate_imm_kalman(
             "metrics_by_horizon": horizon_path.as_posix(),
             "metrics_by_segment": segment_path.as_posix(),
         },
-        "statistics": {
-            "selected_subsets": subset_ids,
-            "evaluated_segments": len(evaluated_segment_keys),
-            "segment_horizon_rows": segment_table.num_rows,
-            "unique_prediction_origins": unique_origins,
-            "constant_velocity_fallback_origins": fallback_origins,
-            "constant_velocity_fallback_rate": (
-                fallback_origins / unique_origins if unique_origins else 0.0
-            ),
-            "maneuver_gated_origins": maneuver_origins,
-            "maneuver_gated_rate": (
-                maneuver_origins / unique_origins if unique_origins else 0.0
-            ),
-            "turn_maneuver_origins": turn_maneuver_origins,
-            "turn_maneuver_rate": (
-                turn_maneuver_origins / unique_origins if unique_origins else 0.0
-            ),
-            "acceleration_maneuver_origins": acceleration_maneuver_origins,
-            "acceleration_maneuver_rate": (
-                acceleration_maneuver_origins / unique_origins
-                if unique_origins
-                else 0.0
-            ),
-            "ols_cv_routed_origins": (
-                unique_origins - maneuver_origins
-                if config.motion_gate_enabled
-                else 0
-            ),
-            "candidate_predictions": candidate_predictions,
-            "evaluated_targets": evaluated_targets,
-            "overall_target_coverage": (
-                evaluated_targets / candidate_predictions
-                if candidate_predictions
-                else 0.0
-            ),
-            "mean_model_probability_cv": float(mean_probabilities[0]),
-            "mean_model_probability_ct": float(mean_probabilities[1]),
-            "mean_model_probability_singer": float(mean_probabilities[2]),
-        },
-        "notes": [
-            "Every forecast uses exactly history_seconds one-hertz points ending at the origin.",
-            "Every candidate origin has a complete window through the largest configured horizon.",
-            "IMM parameters and posterior state use only observations at or before the forecast origin.",
-            "Forecasting is strictly open-loop; no future truth updates the filter.",
-            "When enabled, the causal maneuver gate routes non-maneuver origins to a recent-window least-squares constant-velocity forecast.",
-            "CT and Singer are allowed only after two consecutive smoothed history blocks show directionally consistent turn or acceleration evidence.",
-            "Interpolated or suspicious history points can be skipped as measurement updates.",
-            "Insufficient history falls back to causal constant velocity without dropping the origin.",
-            "Horizontal error uses the WGS84 great-circle distance in metres.",
-            "Barometric-altitude metrics are retained as null-compatible columns; this model predicts geometric altitude only.",
-            "Prediction windows never cross segment_id boundaries.",
-            "No per-origin prediction rows or model-input windows are persisted.",
-            "JSON syntax is used because JSON is a valid YAML 1.2 subset.",
-        ],
+        "statistics": statistics,
+        "notes": notes,
     }
     _write_json_atomic(manifest_path, manifest, overwrite)
     return manifest
@@ -346,7 +372,9 @@ def evaluate_imm_kalman(
 
 def _evaluate_segment(
     segment: _Segment,
-    config: ImmKalmanConfig,
+    config: Any,
+    predictor: PredictionFunction,
+    model_names: tuple[str, ...],
 ) -> tuple[
     list[dict[str, object]],
     dict[int, _MetricAccumulator],
@@ -382,7 +410,7 @@ def _evaluate_segment(
         for value in config.prediction_horizons_seconds
     }
     fallback_count = 0
-    probability_sum = np.zeros(len(MODEL_NAMES), dtype=float)
+    probability_sum = np.zeros(len(model_names), dtype=float)
     probability_count = 0
     gate_counts = np.zeros(3, dtype=np.int64)
     horizon_array = np.asarray(config.prediction_horizons_seconds, dtype=int)
@@ -424,7 +452,7 @@ def _evaluate_segment(
         if config.skip_suspicious_history_updates:
             update_mask &= ~segment.is_suspicious[window_indices]
 
-        prediction = predict_imm_batch(
+        prediction = predictor(
             histories,
             update_mask,
             config.prediction_horizons_seconds,
@@ -433,9 +461,21 @@ def _evaluate_segment(
         fallback_count += int(prediction.fallback_mask.sum())
         gate_counts += np.array(
             [
-                prediction.maneuver_mask.sum(),
-                prediction.turn_maneuver_mask.sum(),
-                prediction.acceleration_maneuver_mask.sum(),
+                getattr(
+                    prediction,
+                    "maneuver_mask",
+                    np.zeros(batch_origins.size, dtype=bool),
+                ).sum(),
+                getattr(
+                    prediction,
+                    "turn_maneuver_mask",
+                    np.zeros(batch_origins.size, dtype=bool),
+                ).sum(),
+                getattr(
+                    prediction,
+                    "acceleration_maneuver_mask",
+                    np.zeros(batch_origins.size, dtype=bool),
+                ).sum(),
             ],
             dtype=np.int64,
         )

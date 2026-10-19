@@ -12,6 +12,9 @@ from typing import Any
 @dataclass(frozen=True, slots=True)
 class ImmKalmanConfig:
     version: str
+    implementation_version: str
+    model_type: str
+    display_name: str
     dataset_root: Path
     subsets: tuple[int, ...]
     split: str
@@ -64,7 +67,9 @@ class ImmKalmanConfig:
     def as_manifest_dict(self) -> dict[str, Any]:
         return {
             "version": self.version,
-            "model_type": "imm_kalman",
+            "implementation_version": self.implementation_version,
+            "model_type": self.model_type,
+            "display_name": self.display_name,
             "dataset_root": self.dataset_root.as_posix(),
             "subsets": list(self.subsets),
             "split": self.split,
@@ -138,6 +143,11 @@ def load_imm_kalman_config(path: Path) -> ImmKalmanConfig:
     )
     config = ImmKalmanConfig(
         version=str(_required(payload, "version")),
+        implementation_version=str(
+            payload.get("implementation_version", "gated_motion_imm_v1")
+        ),
+        model_type=str(payload.get("model_type", "gated_motion_imm")),
+        display_name=str(payload.get("display_name", "Gated Motion IMM")),
         dataset_root=Path(_required(payload, "dataset_root")),
         subsets=tuple(int(value) for value in _required(payload, "subsets")),
         split=str(_required(payload, "split")),
@@ -225,6 +235,10 @@ def _required(mapping: dict[str, Any], key: str) -> Any:
 def _validate_config(config: ImmKalmanConfig) -> None:
     if not config.version.strip():
         raise ValueError("version must not be empty.")
+    if not config.implementation_version.strip():
+        raise ValueError("implementation_version must not be empty.")
+    if not config.model_type.strip() or not config.display_name.strip():
+        raise ValueError("model_type and display_name must not be empty.")
     if not config.subsets or any(value < 1 for value in config.subsets):
         raise ValueError("subsets must contain positive integers.")
     if config.split not in {"train", "validation", "test"}:

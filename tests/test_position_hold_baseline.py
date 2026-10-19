@@ -58,7 +58,7 @@ class PositionHoldBaselineTests(unittest.TestCase):
             dataset_root=self.root,
             subsets=(1,),
             split="test",
-            history_seconds=30,
+            required_history_points=60,
             prediction_horizons_seconds=(1, 5),
             origin_stride_seconds=1,
             exclude_interpolated_origins=True,
@@ -91,10 +91,10 @@ class PositionHoldBaselineTests(unittest.TestCase):
         ) as handle:
             rows = list(csv.DictReader(handle))
         self.assertEqual([int(row["horizon_s"]) for row in rows], [1, 5])
-        self.assertEqual(int(rows[0]["candidate_origins"]), 98)
-        self.assertEqual(int(rows[0]["evaluated_targets"]), 96)
-        self.assertEqual(int(rows[1]["candidate_origins"]), 94)
-        self.assertEqual(int(rows[1]["evaluated_targets"]), 93)
+        self.assertEqual(int(rows[0]["candidate_origins"]), 67)
+        self.assertEqual(int(rows[0]["evaluated_targets"]), 67)
+        self.assertEqual(int(rows[1]["candidate_origins"]), 67)
+        self.assertEqual(int(rows[1]["evaluated_targets"]), 67)
         self.assertGreater(float(rows[0]["horizontal_mean_m"]), 0.0)
         self.assertGreater(float(rows[0]["vertical_mae_m"]), 0.0)
 
@@ -110,6 +110,11 @@ class PositionHoldBaselineTests(unittest.TestCase):
         self.assertEqual(
             persisted_manifest["artifact"],
             "position_hold_baseline_evaluation",
+        )
+        self.assertEqual(persisted_manifest["model_type"], "position_hold")
+        self.assertEqual(
+            persisted_manifest["evaluation_protocol"],
+            "complete-window causal open-loop",
         )
 
     def test_multiple_subsets_are_combined_in_one_segment_file(self) -> None:

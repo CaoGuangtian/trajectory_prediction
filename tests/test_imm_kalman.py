@@ -18,11 +18,11 @@ SRC = PROJECT_ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from trajectory_prediction.models.imm_kalman import (
-    ImmKalmanConfig,
-    ImmKalmanSource,
-    evaluate_imm_kalman,
-    predict_imm_batch,
+from trajectory_prediction.models.gated_motion_imm import (
+    GatedMotionImmConfig,
+    GatedMotionImmSource,
+    evaluate_gated_motion_imm,
+    predict_gated_motion_imm_batch,
 )
 
 
@@ -62,8 +62,11 @@ class ImmKalmanTests(unittest.TestCase):
             }
         )
         pq.write_table(table, self.source_path)
-        self.config = ImmKalmanConfig(
-            version="imm_test_v1",
+        self.config = GatedMotionImmConfig(
+            version="gated_motion_imm_test_v1",
+            implementation_version="gated_motion_imm_v1",
+            model_type="gated_motion_imm",
+            display_name="Gated Motion IMM",
             dataset_root=self.root,
             subsets=(1,),
             split="test",
@@ -115,10 +118,12 @@ class ImmKalmanTests(unittest.TestCase):
         batch = history[None, :, :]
         mask = np.ones((1, 60), dtype=bool)
 
-        first = predict_imm_batch(batch, mask, (1, 5, 10), self.config)
+        first = predict_gated_motion_imm_batch(batch, mask, (1, 5, 10), self.config)
         changed_past = batch.copy()
         changed_past[:, :10, 2] += 100.0
-        second = predict_imm_batch(changed_past, mask, (1, 5, 10), self.config)
+        second = predict_gated_motion_imm_batch(
+            changed_past, mask, (1, 5, 10), self.config
+        )
 
         self.assertEqual(first.positions_enu.shape, (1, 3, 3))
         self.assertFalse(bool(first.fallback_mask[0]))
@@ -149,7 +154,7 @@ class ImmKalmanTests(unittest.TestCase):
             ]
         )
 
-        prediction = predict_imm_batch(
+        prediction = predict_gated_motion_imm_batch(
             history[None, :, :],
             np.ones((1, 60), dtype=bool),
             (1, 10),
@@ -170,7 +175,7 @@ class ImmKalmanTests(unittest.TestCase):
             ]
         )
 
-        prediction = predict_imm_batch(
+        prediction = predict_gated_motion_imm_batch(
             history[None, :, :],
             np.ones((1, 60), dtype=bool),
             (1, 10),
@@ -183,8 +188,8 @@ class ImmKalmanTests(unittest.TestCase):
 
     def test_evaluation_writes_frontend_compatible_artifacts(self) -> None:
         output_directory = self.root / "result"
-        manifest = evaluate_imm_kalman(
-            [ImmKalmanSource(1, self.source_path)],
+        manifest = evaluate_gated_motion_imm(
+            [GatedMotionImmSource(1, self.source_path)],
             self.config,
             output_directory,
         )
@@ -192,7 +197,7 @@ class ImmKalmanTests(unittest.TestCase):
         self.assertTrue((output_directory / "manifest.yaml").is_file())
         self.assertTrue((output_directory / "metrics_by_horizon.csv").is_file())
         self.assertTrue((output_directory / "metrics_by_segment.parquet").is_file())
-        self.assertEqual(manifest["model_type"], "imm_kalman")
+        self.assertEqual(manifest["model_type"], "gated_motion_imm")
         self.assertEqual(manifest["statistics"]["unique_prediction_origins"], 72)
         self.assertEqual(manifest["statistics"]["maneuver_gated_origins"], 0)
         self.assertEqual(manifest["statistics"]["ols_cv_routed_origins"], 72)
@@ -221,8 +226,8 @@ class ImmKalmanTests(unittest.TestCase):
         columns["is_interpolated"] = pa.array(interpolated)
         pq.write_table(pa.table(columns), self.source_path)
 
-        manifest = evaluate_imm_kalman(
-            [ImmKalmanSource(1, self.source_path)],
+        manifest = evaluate_gated_motion_imm(
+            [GatedMotionImmSource(1, self.source_path)],
             fallback_config,
             self.root / "fallback",
         )

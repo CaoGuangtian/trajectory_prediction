@@ -1,5 +1,8 @@
 {
-  "version": "imm_cv_ct_singer_v1",
+  "version": "standard_imm_v1",
+  "implementation_version": "standard_imm_v1",
+  "model_type": "standard_imm",
+  "display_name": "Standard IMM",
   "dataset_root": "data/openskyDataset",
   "subsets": [1],
   "split": "test",
@@ -19,16 +22,20 @@
   "measurement_std_n_m": 30.0,
   "measurement_std_u_m": 30.0,
   "initial_covariance_scale": 10000.0,
-  "alpha_min": 0.001,
-  "alpha_max": 10.0,
-  "sigma_min": 0.0001,
-  "sigma_max": 200.0,
-  "process_q_min": 0.05,
-  "process_q_max": 400.0,
-  "ct_turn_rate_max": 0.3,
-  "model_stickiness_min": 0.90,
-  "model_stickiness_max": 0.98,
+  "model_names": ["cv", "ct_left", "ct_right", "singer"],
+  "initial_model_probabilities": [0.7, 0.1, 0.1, 0.1],
+  "model_transition_matrix": [
+    [0.97, 0.01, 0.01, 0.01],
+    [0.01, 0.97, 0.01, 0.01],
+    [0.01, 0.01, 0.97, 0.01],
+    [0.01, 0.01, 0.01, 0.97]
+  ],
+  "cv_process_q_xyz": [1.0, 1.0, 0.25],
+  "ct_process_q_xyz": [2.0, 2.0, 0.5],
+  "ct_turn_rate_rad_s": 0.008726646259971648,
+  "singer_alpha_xyz": [0.1, 0.1, 0.1],
+  "singer_sigma_xyz": [1.0, 1.0, 0.5],
   "prediction_batch_size": 256,
   "parquet_batch_rows": 65536,
-  "output_root": "outputs/models/imm_kalman"
+  "output_root": "outputs/models/standard_imm"
 }

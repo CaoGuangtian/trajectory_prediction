@@ -39,6 +39,7 @@ class ConstantVelocityConfig:
     dataset_root: Path
     subsets: tuple[int, ...]
     split: str
+    required_history_points: int
     history_seconds: int
     prediction_horizons_seconds: tuple[int, ...]
     origin_stride_seconds: int
@@ -63,6 +64,8 @@ class ConstantVelocityConfig:
             "dataset_root": self.dataset_root.as_posix(),
             "subsets": list(self.subsets),
             "split": self.split,
+            "required_history_points": self.required_history_points,
+            "history_points": self.required_history_points,
             "history_seconds": self.history_seconds,
             "prediction_horizons_seconds": list(
                 self.prediction_horizons_seconds
@@ -105,6 +108,7 @@ def load_constant_velocity_config(path: Path) -> ConstantVelocityConfig:
         dataset_root=Path(_required(payload, "dataset_root")),
         subsets=tuple(int(value) for value in _required(payload, "subsets")),
         split=str(_required(payload, "split")),
+        required_history_points=int(_required(payload, "required_history_points")),
         history_seconds=int(_required(payload, "history_seconds")),
         prediction_horizons_seconds=tuple(
             int(value)
@@ -251,7 +255,7 @@ def evaluate_constant_velocity(
         "artifact": "constant_velocity_baseline_evaluation",
         "model_type": "constant_velocity",
         "display_name": "Constant Velocity",
-        "evaluation_protocol": "available targets by horizon",
+        "evaluation_protocol": "complete-window causal open-loop",
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "configuration": config.as_manifest_dict(),
         "sources": source_entries,
@@ -306,6 +310,8 @@ def _validate_config(config: ConstantVelocityConfig) -> None:
         raise ValueError("split must be train, validation, or test.")
     if config.history_seconds < 1:
         raise ValueError("history_seconds must be positive.")
+    if config.required_history_points < 1:
+        raise ValueError("required_history_points must be positive.")
     horizons = config.prediction_horizons_seconds
     if not horizons or any(value < 1 for value in horizons):
         raise ValueError("prediction_horizons_seconds must contain positive integers.")
@@ -351,8 +357,14 @@ def _create_evaluation_view(
             "CAST(round(o.timeAtServer - b.segment_start_time) AS BIGINT) "
             f"% {config.origin_stride_seconds} = 0"
         ),
-        f"o.timeAtServer >= b.segment_start_time + {config.history_seconds}",
-        "o.timeAtServer + h.horizon_s <= b.segment_end_time",
+        (
+            "o.timeAtServer >= b.segment_start_time + "
+            f"{config.required_history_points - 1}"
+        ),
+        (
+            "o.timeAtServer + "
+            f"{max(config.prediction_horizons_seconds)} <= b.segment_end_time"
+        ),
     ]
     if config.exclude_interpolated_origins:
         origin_conditions.append("NOT o.is_interpolated")
@@ -761,8 +773,14 @@ def _origin_conditions(
             "CAST(round(o.timeAtServer - b.segment_start_time) AS BIGINT) "
             f"% {config.origin_stride_seconds} = 0"
         ),
-        f"o.timeAtServer >= b.segment_start_time + {config.history_seconds}",
-        f"o.timeAtServer + {int(horizon_s)} <= b.segment_end_time",
+        (
+            "o.timeAtServer >= b.segment_start_time + "
+            f"{config.required_history_points - 1}"
+        ),
+        (
+            "o.timeAtServer + "
+            f"{max(config.prediction_horizons_seconds)} <= b.segment_end_time"
+        ),
     ]
     if config.exclude_interpolated_origins:
         conditions.append("NOT o.is_interpolated")

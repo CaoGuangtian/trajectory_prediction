@@ -3,6 +3,7 @@
   "dataset_root": "data/openskyDataset",
   "subsets": [1],
   "split": "test",
+  "required_history_points": 60,
   "history_seconds": 30,
   "prediction_horizons_seconds": [1, 5, 10, 20, 30, 60],
   "origin_stride_seconds": 1,
