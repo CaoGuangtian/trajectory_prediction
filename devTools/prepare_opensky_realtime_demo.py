@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare a compact two-hour realtime replay CSV from OpenSky LocaRDS data.
+"""Prepare a compact decimal-degree realtime replay CSV from OpenSky LocaRDS data.
 
 The input file is scanned twice and never loaded as a whole.  The script keeps
 only trusted, continuous aircraft segments, resamples them to 1 Hz, applies
@@ -915,38 +915,38 @@ def relocate_to_china(
     return local_xy_to_lonlat(x, y, target_center_lon, target_center_lat)
 
 
-def decimal_degrees_to_packed_dms(value: float) -> str:
-    if value < 0:
-        raise ValueError("The replay encoder does not support negative coordinates.")
-    # The target protocol keeps only DDD.MMSS/DDD.MMSS with one digit for
-    # tens-of-seconds. Round in angular seconds first so 59m59s correctly
-    # carries into the next degree instead of producing an invalid .596 value.
-    total_seconds = (Decimal(str(value)) * Decimal(3600)).quantize(
-        Decimal("1E1"), rounding=ROUND_HALF_UP
+def format_decimal_degrees(value: float) -> str:
+    """Format WGS84 decimal degrees without converting them to packed DMS."""
+    if not math.isfinite(value):
+        raise ValueError(f"Coordinate must be finite, got {value!r}.")
+    return format(
+        Decimal(str(value)).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP),
+        ".6f",
     )
-    degrees = int(total_seconds // Decimal(3600))
-    remaining = total_seconds - Decimal(degrees * 3600)
-    minutes = int(remaining // Decimal(60))
-    seconds = int(remaining - Decimal(minutes * 60))
-    packed = Decimal(degrees) + Decimal(minutes) / 100 + Decimal(seconds) / 10_000
-    return format(packed.quantize(Decimal("0.001")), ".3f")
 
 
-def protocol_quantize_packed(raw: str, *, longitude: bool) -> str:
-    value = Decimal(raw).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
-    fractional = format(value, ".3f").split(".", 1)[1]
-    minutes = int(fractional[:2])
-    tens_of_seconds = int(fractional[2])
-    if minutes >= 60 or tens_of_seconds >= 6:
-        raise ValueError(f"Packed coordinate has invalid minutes/seconds: {raw}")
+def protocol_quantize_decimal(raw: str, *, longitude: bool) -> str:
+    """Validate compatibility with the realtime fixed-point decimal encoder."""
+    source = Decimal(raw)
+    if not source.is_finite():
+        raise ValueError(f"Coordinate must be finite, got {raw!r}.")
+    value = source.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
     digits = format(value, ".3f").replace(".", "")
     if longitude:
-        if value < 100:
-            raise ValueError(f"Longitude must be at least 100 degrees, got {value}.")
+        if not Decimal(100) <= value < Decimal(200):
+            raise ValueError(
+                "Longitude must be in [100, 200) for the realtime encoder, "
+                f"got {value}."
+            )
         digits = digits[1:]
+    elif not Decimal(0) <= value < Decimal(100):
+        raise ValueError(
+            "Latitude must be in [0, 100) for the realtime encoder, "
+            f"got {value}."
+        )
     expected = 5
     if len(digits) > expected:
-        raise ValueError(f"Packed coordinate does not fit {expected} digits: {raw}")
+        raise ValueError(f"Decimal coordinate does not fit {expected} digits: {raw}")
     return digits.zfill(expected)
 
 
@@ -956,8 +956,8 @@ def validate_output_row(row: dict[str, str]) -> None:
         raise ValueError(f"P1 must contain 4-6 digits: {p1!r}")
     if row["GP"] and (not row["GP"].isdigit() or not 3 <= len(row["GP"]) <= 6):
         raise ValueError(f"Invalid GP: {row['GP']!r}")
-    protocol_quantize_packed(row["JD"], longitude=True)
-    protocol_quantize_packed(row["WD"], longitude=False)
+    protocol_quantize_decimal(row["JD"], longitude=True)
+    protocol_quantize_decimal(row["WD"], longitude=False)
     height = int(Decimal(row["H"]))
     encoded_height = height // 100 if height >= 100 else 900 + height
     if not 0 <= encoded_height <= 999:
@@ -1001,8 +1001,8 @@ def build_output_rows(
             row = {
                 "P1": flight.p1,
                 "GP": "",
-                "JD": decimal_degrees_to_packed_dms(lon),
-                "WD": decimal_degrees_to_packed_dms(lat),
+                "JD": format_decimal_degrees(lon),
+                "WD": format_decimal_degrees(lat),
                 "H": str(max(1, int(round(point.alt)))),
                 "Time": timestamp.strftime(TIME_FORMAT),
             }

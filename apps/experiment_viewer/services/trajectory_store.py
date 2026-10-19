@@ -47,6 +47,82 @@ class TrackData:
 
 
 @dataclass(frozen=True)
+class ProcessedAircraftSummary:
+    aircraft: int
+    point_count: int
+    observed_point_count: int
+    interpolated_point_count: int
+    suspicious_point_count: int
+    trajectory_count: int
+    segment_count: int
+    trusted: str
+    split: str
+    start_time: float
+    end_time: float
+
+
+@dataclass(frozen=True)
+class ProcessedTrackData:
+    aircraft: int
+    time: tuple[float, ...]
+    longitude: tuple[float, ...]
+    latitude: tuple[float, ...]
+    geo_altitude: tuple[float, ...]
+    baro_altitude: tuple[float | None, ...]
+    trajectory_id: tuple[int, ...]
+    segment_id: tuple[int, ...]
+    point_index: tuple[int, ...]
+    is_interpolated: tuple[bool, ...]
+    is_speed_suspicious: tuple[bool, ...]
+    trusted: str | None
+    split: str | None
+
+    @property
+    def point_count(self) -> int:
+        return len(self.time)
+
+    @property
+    def observed_point_count(self) -> int:
+        return self.point_count - self.interpolated_point_count
+
+    @property
+    def interpolated_point_count(self) -> int:
+        return sum(self.is_interpolated)
+
+    @property
+    def suspicious_point_count(self) -> int:
+        return sum(self.is_speed_suspicious)
+
+    @property
+    def trajectory_count(self) -> int:
+        return len(set(self.trajectory_id))
+
+    @property
+    def segment_count(self) -> int:
+        return len(set(self.segment_id))
+
+    def between(self, start_time: float, end_time: float) -> "ProcessedTrackData":
+        """Return processed trajectory points inside an inclusive time window."""
+        left = bisect_left(self.time, start_time)
+        right = bisect_right(self.time, end_time)
+        return ProcessedTrackData(
+            aircraft=self.aircraft,
+            time=self.time[left:right],
+            longitude=self.longitude[left:right],
+            latitude=self.latitude[left:right],
+            geo_altitude=self.geo_altitude[left:right],
+            baro_altitude=self.baro_altitude[left:right],
+            trajectory_id=self.trajectory_id[left:right],
+            segment_id=self.segment_id[left:right],
+            point_index=self.point_index[left:right],
+            is_interpolated=self.is_interpolated[left:right],
+            is_speed_suspicious=self.is_speed_suspicious[left:right],
+            trusted=self.trusted,
+            split=self.split,
+        )
+
+
+@dataclass(frozen=True)
 class SamplingDistributionSummary:
     total_count: int
     detail_count: int
@@ -286,6 +362,132 @@ class TrajectoryStore:
             detail_counts=tuple(detail_counts),
             maximum_interval=float(first_row[7] or detail_limit),
             gap_counts=tuple(gap_counts),
+        )
+
+
+class ProcessedTrajectoryStore:
+    """Read-only access to the compact, preprocessed trajectory artifact."""
+
+    REQUIRED_COLUMNS = {
+        "aircraft",
+        "trajectory_id",
+        "segment_id",
+        "point_index",
+        "timeAtServer",
+        "longitude",
+        "latitude",
+        "geoAltitude",
+        "baroAltitude",
+        "trusted",
+        "split",
+        "is_interpolated",
+        "is_speed_suspicious",
+    }
+
+    def __init__(self, parquet_path: str | Path) -> None:
+        self.parquet_path = Path(parquet_path).resolve()
+        if not self.parquet_path.is_file():
+            raise FileNotFoundError(
+                f"Processed trajectory data not found: {self.parquet_path}"
+            )
+        with self._connect() as connection:
+            rows = connection.execute(
+                "DESCRIBE SELECT * FROM read_parquet(?)",
+                [str(self.parquet_path)],
+            ).fetchall()
+        columns = {row[0] for row in rows}
+        missing = sorted(self.REQUIRED_COLUMNS - columns)
+        if missing:
+            raise ValueError(
+                "Processed trajectory data is missing required columns: "
+                + ", ".join(missing)
+            )
+
+    def _connect(self) -> duckdb.DuckDBPyConnection:
+        return duckdb.connect(database=":memory:", read_only=False)
+
+    @lru_cache(maxsize=1)
+    def aircraft_summaries(self) -> tuple[ProcessedAircraftSummary, ...]:
+        query = """
+            SELECT
+                aircraft,
+                count(*) AS point_count,
+                count(*) FILTER (WHERE NOT is_interpolated) AS observed_point_count,
+                count(*) FILTER (WHERE is_interpolated) AS interpolated_point_count,
+                count(*) FILTER (
+                    WHERE is_speed_suspicious
+                ) AS suspicious_point_count,
+                count(DISTINCT trajectory_id) AS trajectory_count,
+                count(DISTINCT segment_id) AS segment_count,
+                any_value(trusted) AS trust_level,
+                any_value(split) AS split_name,
+                min(timeAtServer) AS start_time,
+                max(timeAtServer) AS end_time
+            FROM read_parquet(?)
+            GROUP BY aircraft
+            ORDER BY aircraft
+        """
+        with self._connect() as connection:
+            rows = connection.execute(query, [str(self.parquet_path)]).fetchall()
+        return tuple(
+            ProcessedAircraftSummary(
+                aircraft=int(row[0]),
+                point_count=int(row[1]),
+                observed_point_count=int(row[2]),
+                interpolated_point_count=int(row[3]),
+                suspicious_point_count=int(row[4]),
+                trajectory_count=int(row[5]),
+                segment_count=int(row[6]),
+                trusted=str(row[7]),
+                split=str(row[8]),
+                start_time=float(row[9]),
+                end_time=float(row[10]),
+            )
+            for row in rows
+        )
+
+    @lru_cache(maxsize=8)
+    def load_track(self, aircraft: int) -> ProcessedTrackData:
+        query = """
+            SELECT
+                timeAtServer,
+                longitude,
+                latitude,
+                geoAltitude,
+                baroAltitude,
+                trajectory_id,
+                segment_id,
+                point_index,
+                is_interpolated,
+                is_speed_suspicious,
+                trusted,
+                split
+            FROM read_parquet(?)
+            WHERE aircraft = ?
+            ORDER BY timeAtServer, segment_id, point_index
+        """
+        with self._connect() as connection:
+            rows = connection.execute(
+                query,
+                [str(self.parquet_path), int(aircraft)],
+            ).fetchall()
+
+        trusted = str(rows[0][10]) if rows else None
+        split = str(rows[0][11]) if rows else None
+        return ProcessedTrackData(
+            aircraft=int(aircraft),
+            time=tuple(float(row[0]) for row in rows),
+            longitude=tuple(float(row[1]) for row in rows),
+            latitude=tuple(float(row[2]) for row in rows),
+            geo_altitude=tuple(float(row[3]) for row in rows),
+            baro_altitude=tuple(_optional_float(row[4]) for row in rows),
+            trajectory_id=tuple(int(row[5]) for row in rows),
+            segment_id=tuple(int(row[6]) for row in rows),
+            point_index=tuple(int(row[7]) for row in rows),
+            is_interpolated=tuple(bool(row[8]) for row in rows),
+            is_speed_suspicious=tuple(bool(row[9]) for row in rows),
+            trusted=trusted,
+            split=split,
         )
 
 

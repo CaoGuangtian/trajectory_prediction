@@ -9,7 +9,11 @@ from typing import Sequence
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from apps.experiment_viewer.services import SamplingDistributionSummary, TrackData
+from apps.experiment_viewer.services import (
+    ProcessedTrackData,
+    SamplingDistributionSummary,
+    TrackData,
+)
 
 
 INK = "#172033"
@@ -18,6 +22,7 @@ GRID = "#E4E7EC"
 BLUE = "#315A9E"
 GREEN = "#2E7D68"
 RED = "#B54747"
+ORANGE = "#D97706"
 PAPER = "#FFFFFF"
 SAMPLING_DETAIL_LIMIT_SECONDS = 2.0
 SAMPLING_DETAIL_BIN_COUNT = 40
@@ -25,57 +30,147 @@ SAMPLING_DETAIL_BIN_COUNT = 40
 
 def build_time_series_figure(
     track: TrackData,
-    altitude_field: str,
     view_revision: str | None = None,
+    processed_track: ProcessedTrackData | None = None,
+    data_view: str = "raw",
+    show_interpolated: bool = True,
+    show_suspicious: bool = True,
 ) -> go.Figure:
-    altitude, altitude_label = _select_altitude(track, altitude_field)
-    times, series = _insert_time_gaps(
-        track.time,
-        (track.longitude, track.latitude, altitude),
-    )
-
     figure = make_subplots(
-        rows=3,
+        rows=4,
         cols=1,
         shared_xaxes=True,
-        vertical_spacing=0.075,
+        vertical_spacing=0.055,
     )
     specifications = (
-        (series[0], "Longitude", "Longitude (°)"),
-        (series[1], "Latitude", "Latitude (°)"),
-        (series[2], altitude_label, "Altitude (m)"),
+        (track.longitude, processed_track.longitude if processed_track else (), "Longitude", "Longitude (°)"),
+        (track.latitude, processed_track.latitude if processed_track else (), "Latitude", "Latitude (°)"),
+        (
+            track.geo_altitude,
+            processed_track.geo_altitude if processed_track else (),
+            "Geometric altitude",
+            "Geometric altitude (m)",
+        ),
+        (
+            track.baro_altitude,
+            processed_track.baro_altitude if processed_track else (),
+            "Barometric altitude",
+            "Barometric altitude (m)",
+        ),
     )
 
-    for row, (values, name, y_title) in enumerate(specifications, start=1):
-        figure.add_trace(
-            go.Scattergl(
-                x=times,
-                y=values,
-                mode="lines+markers",
-                name=name,
-                line={"color": BLUE, "width": 1.5},
-                marker={
-                    "color": "rgba(49, 90, 158, 0.58)",
-                    "size": 3,
-                },
-                hovertemplate=f"{name}: %{{y:,.3f}}<extra></extra>",
-                connectgaps=False,
-            ),
-            row=row,
-            col=1,
-        )
+    raw_visible = data_view in {"raw", "compare"}
+    processed_available = processed_track is not None and processed_track.point_count > 0
+    processed_visible = data_view in {"processed", "compare"} and processed_available
+
+    for row, (raw_values, processed_values, name, y_title) in enumerate(
+        specifications, start=1
+    ):
+        if raw_visible:
+            if data_view == "raw":
+                times, raw_series = _insert_time_gaps(track.time, (raw_values,))
+                figure.add_trace(
+                    go.Scattergl(
+                        x=times,
+                        y=raw_series[0],
+                        mode="lines+markers",
+                        name=name,
+                        line={"color": BLUE, "width": 1.5},
+                        marker={"color": "rgba(49, 90, 158, 0.72)", "size": 4.5},
+                        hovertemplate=f"{name}: %{{y:,.3f}}<extra></extra>",
+                        connectgaps=False,
+                    ),
+                    row=row,
+                    col=1,
+                )
+            else:
+                times, raw_series = _insert_time_gaps(track.time, (raw_values,))
+                figure.add_trace(
+                    go.Scattergl(
+                        x=times,
+                        y=raw_series[0],
+                        mode="lines+markers",
+                        name="Raw reports",
+                        legendgroup="raw",
+                        showlegend=row == 1,
+                        line={"color": BLUE, "width": 1.35},
+                        marker={"color": "rgba(49, 90, 158, 0.72)", "size": 4.5},
+                        hovertemplate=(
+                            "Raw report<br>Time: %{x:,.3f} s"
+                            f"<br>{name}: %{{y:,.3f}}<extra></extra>"
+                        ),
+                        connectgaps=False,
+                    ),
+                    row=row,
+                    col=1,
+                )
+
+        if processed_visible and processed_track is not None:
+            line_time, line_series = _insert_segment_gaps(
+                processed_track.time,
+                processed_track.segment_id,
+                (processed_values,),
+            )
+            figure.add_trace(
+                go.Scattergl(
+                    x=line_time,
+                    y=line_series[0],
+                    mode="lines",
+                    name="Standardized trajectory",
+                    legendgroup="processed-line",
+                    showlegend=row == 1,
+                    line={"color": ORANGE, "width": 1.45},
+                    hoverinfo="skip",
+                    connectgaps=False,
+                ),
+                row=row,
+                col=1,
+            )
+            _add_processed_time_markers(
+                figure,
+                processed_track,
+                processed_values,
+                name,
+                row,
+                show_interpolated,
+                show_suspicious,
+            )
         figure.update_yaxes(title_text=y_title, row=row, col=1)
 
-    figure.update_xaxes(title_text="Relative time (s)", row=3, col=1)
+    if data_view == "processed" and not processed_available:
+        figure.add_annotation(
+            text="No standardized trajectory available for this aircraft",
+            x=0.5,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False,
+            font={"color": MUTED, "size": 13},
+        )
+
+    figure.update_xaxes(title_text="Relative time (s)", row=4, col=1)
     figure.update_layout(
         template="plotly_white",
         paper_bgcolor=PAPER,
         plot_bgcolor=PAPER,
-        margin={"l": 72, "r": 22, "t": 24, "b": 58},
+        margin={
+            "l": 72,
+            "r": 22,
+            "t": 52 if data_view != "raw" else 24,
+            "b": 58,
+        },
         hovermode="x unified",
-        showlegend=False,
+        showlegend=data_view != "raw",
+        legend={
+            "orientation": "h",
+            "x": 0,
+            "y": 1.01,
+            "xanchor": "left",
+            "yanchor": "bottom",
+            "font": {"size": 10, "color": MUTED},
+        },
         font={"family": "Segoe UI, Arial, sans-serif", "color": INK, "size": 12},
-        uirevision=view_revision or f"time-{track.aircraft}-{altitude_field}",
+        uirevision=view_revision or f"time-{track.aircraft}",
     )
     figure.update_xaxes(
         showgrid=True,
@@ -101,6 +196,10 @@ def build_time_series_figure(
 def build_spatial_figure(
     track: TrackData,
     view_revision: str | None = None,
+    processed_track: ProcessedTrackData | None = None,
+    data_view: str = "raw",
+    show_interpolated: bool = True,
+    show_suspicious: bool = True,
 ) -> go.Figure:
     valid_points = [
         (time, longitude, latitude)
@@ -113,8 +212,9 @@ def build_spatial_figure(
         if _valid_number(longitude) and _valid_number(latitude)
     ]
 
+    processed_valid = processed_track is not None and processed_track.point_count > 0
     figure = go.Figure()
-    if valid_points:
+    if data_view == "raw" and valid_points:
         time = tuple(point[0] for point in valid_points)
         longitude = tuple(point[1] for point in valid_points)
         latitude = tuple(point[2] for point in valid_points)
@@ -127,8 +227,8 @@ def build_spatial_figure(
                 mode="lines+markers",
                 line={"color": BLUE, "width": 2},
                 marker={
-                    "color": "rgba(49, 90, 158, 0.58)",
-                    "size": 3.2,
+                    "color": "rgba(49, 90, 158, 0.72)",
+                    "size": 4.5,
                 },
                 name="Trajectory",
                 hovertemplate="Lon: %{x:.5f}°<br>Lat: %{y:.5f}°<extra></extra>",
@@ -159,6 +259,97 @@ def build_spatial_figure(
                 ),
             )
         )
+    elif data_view != "raw":
+        if data_view == "compare" and valid_points:
+            raw_time = tuple(point[0] for point in valid_points)
+            raw_longitude = tuple(point[1] for point in valid_points)
+            raw_latitude = tuple(point[2] for point in valid_points)
+            raw_time_with_gaps, raw_spatial_series = _insert_time_gaps(
+                raw_time,
+                (raw_longitude, raw_latitude),
+            )
+            figure.add_trace(
+                go.Scattergl(
+                    x=raw_spatial_series[0],
+                    y=raw_spatial_series[1],
+                    mode="lines+markers",
+                    name="Raw reports",
+                    line={"color": BLUE, "width": 1.5},
+                    marker={"color": "rgba(49, 90, 158, 0.72)", "size": 4.5},
+                    customdata=raw_time_with_gaps,
+                    hovertemplate=(
+                        "Raw report<br>Time: %{customdata:,.3f} s"
+                        "<br>Lon: %{x:.5f}°<br>Lat: %{y:.5f}°<extra></extra>"
+                    ),
+                    connectgaps=False,
+                )
+            )
+        if processed_valid and processed_track is not None:
+            line_time, line_series = _insert_segment_gaps(
+                processed_track.time,
+                processed_track.segment_id,
+                (processed_track.longitude, processed_track.latitude),
+            )
+            figure.add_trace(
+                go.Scattergl(
+                    x=line_series[0],
+                    y=line_series[1],
+                    mode="lines",
+                    name="Standardized trajectory",
+                    line={"color": ORANGE, "width": 1.8},
+                    customdata=line_time,
+                    hovertemplate=(
+                        "Standardized trajectory<br>Time: %{customdata:,.3f} s"
+                        "<br>Lon: %{x:.5f}°<br>Lat: %{y:.5f}°<extra></extra>"
+                    ),
+                    connectgaps=False,
+                )
+            )
+            _add_processed_spatial_markers(
+                figure,
+                processed_track,
+                show_interpolated,
+                show_suspicious,
+            )
+            figure.add_trace(
+                go.Scatter(
+                    x=[processed_track.longitude[0]],
+                    y=[processed_track.latitude[0]],
+                    mode="markers",
+                    name="Standardized start",
+                    showlegend=False,
+                    marker={"color": GREEN, "size": 9, "line": {"color": PAPER, "width": 1}},
+                    hovertemplate=(
+                        "Standardized start<br>Lon: %{x:.5f}°"
+                        "<br>Lat: %{y:.5f}°<extra></extra>"
+                    ),
+                )
+            )
+            figure.add_trace(
+                go.Scattergl(
+                    x=[processed_track.longitude[-1]],
+                    y=[processed_track.latitude[-1]],
+                    mode="markers",
+                    name="Current standardized position",
+                    showlegend=False,
+                    marker={"color": RED, "size": 9},
+                    customdata=[processed_track.time[-1]],
+                    hovertemplate=(
+                        "Current standardized position<br>Time: %{customdata:,.3f} s"
+                        "<br>Lon: %{x:.5f}°<br>Lat: %{y:.5f}°<extra></extra>"
+                    ),
+                )
+            )
+        elif not valid_points or data_view == "processed":
+            figure.add_annotation(
+                text="No standardized trajectory available for this aircraft",
+                x=0.5,
+                y=0.5,
+                xref="paper",
+                yref="paper",
+                showarrow=False,
+                font={"color": MUTED, "size": 13},
+            )
     else:
         figure.add_annotation(
             text="No valid longitude/latitude observations",
@@ -174,7 +365,12 @@ def build_spatial_figure(
         template="plotly_white",
         paper_bgcolor=PAPER,
         plot_bgcolor=PAPER,
-        margin={"l": 70, "r": 24, "t": 24, "b": 58},
+        margin={
+            "l": 70,
+            "r": 24,
+            "t": 54 if data_view != "raw" else 24,
+            "b": 58,
+        },
         hovermode="closest",
         legend={
             "orientation": "h",
@@ -595,13 +791,154 @@ def _density_histogram(
     return centers, density, width, tuple(counts)
 
 
-def _select_altitude(
-    track: TrackData,
-    altitude_field: str,
-) -> tuple[Sequence[float | None], str]:
-    if altitude_field == "baroAltitude":
-        return track.baro_altitude, "Barometric altitude"
-    return track.geo_altitude, "Geometric altitude"
+def _add_processed_time_markers(
+    figure: go.Figure,
+    track: ProcessedTrackData,
+    values: Sequence[float | None],
+    value_name: str,
+    row: int,
+    show_interpolated: bool,
+    show_suspicious: bool,
+) -> None:
+    marker_groups = [
+        (
+            "Observed 1 Hz points",
+            lambda index: not track.is_interpolated[index]
+            and not track.is_speed_suspicious[index],
+            {"color": ORANGE, "size": 5, "symbol": "circle"},
+            "observed",
+        )
+    ]
+    if show_interpolated:
+        marker_groups.append(
+            (
+                "Interpolated points",
+                lambda index: track.is_interpolated[index]
+                and not track.is_speed_suspicious[index],
+                {
+                    "color": ORANGE,
+                    "size": 7,
+                    "symbol": "circle-open",
+                    "line": {"color": ORANGE, "width": 1.3},
+                },
+                "interpolated",
+            )
+        )
+    if show_suspicious:
+        marker_groups.append(
+            (
+                "Suspicious transition endpoint",
+                lambda index: track.is_speed_suspicious[index],
+                {"color": RED, "size": 8, "symbol": "x", "line": {"width": 1.3}},
+                "suspicious",
+            )
+        )
+
+    for label, predicate, marker, legend_group in marker_groups:
+        indices = [
+            index
+            for index, value in enumerate(values)
+            if predicate(index) and _valid_number(value)
+        ]
+        if not indices:
+            continue
+        figure.add_trace(
+            go.Scattergl(
+                x=[track.time[index] for index in indices],
+                y=[values[index] for index in indices],
+                mode="markers",
+                name=label,
+                legendgroup=legend_group,
+                showlegend=row == 1,
+                marker=marker,
+                customdata=[track.segment_id[index] for index in indices],
+                hovertemplate=(
+                    f"{label}<br>Time: %{{x:,.3f}} s"
+                    f"<br>{value_name}: %{{y:,.3f}}"
+                    "<br>Segment: %{customdata}<extra></extra>"
+                ),
+            ),
+            row=row,
+            col=1,
+        )
+
+
+def _add_processed_spatial_markers(
+    figure: go.Figure,
+    track: ProcessedTrackData,
+    show_interpolated: bool,
+    show_suspicious: bool,
+) -> None:
+    marker_groups = [
+        (
+            "Observed 1 Hz points",
+            lambda index: not track.is_interpolated[index]
+            and not track.is_speed_suspicious[index],
+            {"color": ORANGE, "size": 5, "symbol": "circle"},
+        )
+    ]
+    if show_interpolated:
+        marker_groups.append(
+            (
+                "Interpolated points",
+                lambda index: track.is_interpolated[index]
+                and not track.is_speed_suspicious[index],
+                {
+                    "color": ORANGE,
+                    "size": 7,
+                    "symbol": "circle-open",
+                    "line": {"color": ORANGE, "width": 1.3},
+                },
+            )
+        )
+    if show_suspicious:
+        marker_groups.append(
+            (
+                "Suspicious transition endpoint",
+                lambda index: track.is_speed_suspicious[index],
+                {"color": RED, "size": 8, "symbol": "x", "line": {"width": 1.3}},
+            )
+        )
+
+    for label, predicate, marker in marker_groups:
+        indices = [index for index in range(track.point_count) if predicate(index)]
+        if not indices:
+            continue
+        figure.add_trace(
+            go.Scattergl(
+                x=[track.longitude[index] for index in indices],
+                y=[track.latitude[index] for index in indices],
+                mode="markers",
+                name=label,
+                marker=marker,
+                customdata=[
+                    [track.time[index], track.segment_id[index]] for index in indices
+                ],
+                hovertemplate=(
+                    f"{label}<br>Time: %{{customdata[0]:,.3f}} s"
+                    "<br>Segment: %{customdata[1]}"
+                    "<br>Lon: %{x:.5f}°<br>Lat: %{y:.5f}°<extra></extra>"
+                ),
+            )
+        )
+
+
+def _insert_segment_gaps(
+    time: Sequence[float],
+    segment_id: Sequence[int],
+    series: Sequence[Sequence[float | None]],
+) -> tuple[tuple[float | None, ...], tuple[tuple[float | None, ...], ...]]:
+    output_time: list[float | None] = []
+    output_series: list[list[float | None]] = [[] for _ in series]
+    for index, current_time in enumerate(time):
+        if index and segment_id[index] != segment_id[index - 1]:
+            output_time.append(None)
+            for values in output_series:
+                values.append(None)
+        output_time.append(current_time)
+        for output, values in zip(output_series, series, strict=True):
+            output.append(values[index])
+    return tuple(output_time), tuple(tuple(values) for values in output_series)
 
 
 def _insert_time_gaps(

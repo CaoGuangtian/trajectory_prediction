@@ -89,7 +89,7 @@ main {
 
 .control-panel {
   display: grid;
-  grid-template-columns: minmax(310px, 1.35fr) minmax(280px, 1fr) minmax(190px, 0.65fr);
+  grid-template-columns: minmax(340px, 1.3fr) minmax(330px, 1.05fr) minmax(190px, 0.6fr);
   align-items: end;
   gap: 28px;
   padding: 20px 22px;
@@ -131,6 +131,32 @@ main {
 
 .radio-input {
   accent-color: var(--accent);
+}
+
+.compact-radio-group {
+  min-height: 22px;
+  gap: 16px;
+}
+
+.point-option-group {
+  display: flex;
+  min-height: 20px;
+  align-items: center;
+  gap: 15px;
+  margin-top: 7px;
+}
+
+.point-option-label {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  margin: 0 !important;
+  color: var(--muted) !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  cursor: pointer;
 }
 
 .source-note {
@@ -177,8 +203,13 @@ main {
   border-right: 1px solid var(--line);
 }
 
+.metric:nth-child(5n),
 .metric:last-child {
   border-right: 0;
+}
+
+.metric:nth-child(n + 6) {
+  border-top: 1px solid var(--line);
 }
 
 .metric span,
@@ -367,8 +398,8 @@ main {
 
 .time-series-graph,
 .spatial-graph {
-  height: 660px !important;
-  min-height: 660px;
+  height: 820px !important;
+  min-height: 820px;
 }
 
 .sampling-grid {
@@ -417,12 +448,16 @@ footer {
     grid-template-columns: repeat(3, 1fr);
   }
 
-  .metric:nth-child(3) {
+  .metric:nth-child(3n) {
     border-right: 0;
   }
 
   .metric:nth-child(n + 4) {
     border-top: 1px solid var(--line);
+  }
+
+  .metric:nth-child(5n) {
+    border-right: 1px solid var(--line);
   }
 }
 
@@ -475,8 +510,8 @@ footer {
 
   .time-series-graph,
   .spatial-graph {
-    height: 560px !important;
-    min-height: 560px;
+    height: 720px !important;
+    min-height: 720px;
   }
 
   footer {

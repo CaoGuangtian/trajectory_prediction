@@ -2,6 +2,9 @@
 
 from .trajectory_store import (
     AircraftSummary,
+    ProcessedAircraftSummary,
+    ProcessedTrackData,
+    ProcessedTrajectoryStore,
     SamplingDistributionSummary,
     TrackData,
     TrajectoryStore,
@@ -9,6 +12,9 @@ from .trajectory_store import (
 
 __all__ = [
     "AircraftSummary",
+    "ProcessedAircraftSummary",
+    "ProcessedTrackData",
+    "ProcessedTrajectoryStore",
     "SamplingDistributionSummary",
     "TrackData",
     "TrajectoryStore",

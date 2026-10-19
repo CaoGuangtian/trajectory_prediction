@@ -1,0 +1,23 @@
+{
+  "version": "opensky_standardized_1hz_v2",
+  "dataset_root": "data/openskyDataset",
+  "subsets": [1],
+  "sampling_interval_seconds": 1,
+  "macro_gap_seconds": 20,
+  "max_interpolation_missing_steps": 19,
+  "coordinate_conflict_threshold_m": 1000.0,
+  "suspicious_horizontal_speed_mps": 400.0,
+  "strong_anomaly_horizontal_speed_mps": 600.0,
+  "minimum_segment_points": 2,
+  "minimum_segment_duration_seconds": 120,
+  "parquet_compression": "zstd",
+  "parquet_row_group_rows": 100000,
+  "duckdb_memory_limit": "512MB",
+  "duckdb_threads": 1,
+  "split": {
+    "seed": 20261018,
+    "train_ratio": 0.70,
+    "validation_ratio": 0.15,
+    "test_ratio": 0.15
+  }
+}

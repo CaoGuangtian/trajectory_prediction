@@ -15,7 +15,7 @@ from apps.experiment_viewer.figures import (
     build_spatial_figure,
     build_time_series_figure,
 )
-from apps.experiment_viewer.services import TrajectoryStore
+from apps.experiment_viewer.services import ProcessedTrajectoryStore, TrajectoryStore
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -27,6 +27,14 @@ DEFAULT_DATA_PATH = (
     / "set_1.parquet"
 )
 DATA_PATH = Path(os.environ.get("TRAJECTORY_DATA_PATH", DEFAULT_DATA_PATH)).resolve()
+DEFAULT_PROCESSED_DATA_PATH = (
+    DEFAULT_DATA_PATH.parent
+    / "standardized_1hz"
+    / f"{DEFAULT_DATA_PATH.stem}_standardized_1hz.parquet"
+)
+PROCESSED_DATA_PATH = Path(
+    os.environ.get("TRAJECTORY_PROCESSED_DATA_PATH", DEFAULT_PROCESSED_DATA_PATH)
+).resolve()
 
 try:
     SOURCE_LABEL = DATA_PATH.relative_to(PROJECT_ROOT).as_posix()
@@ -36,13 +44,25 @@ DATASET_LABEL = DATA_PATH.parent.parent.name
 SUBSET_LABEL = DATA_PATH.parent.name
 
 store = TrajectoryStore(DATA_PATH)
+processed_store = (
+    ProcessedTrajectoryStore(PROCESSED_DATA_PATH)
+    if PROCESSED_DATA_PATH.is_file()
+    else None
+)
 aircraft_summaries = store.aircraft_summaries()
 if not aircraft_summaries:
     raise RuntimeError(f"No aircraft trajectories found in {DATA_PATH}")
 
 summary_by_aircraft = {summary.aircraft: summary for summary in aircraft_summaries}
+processed_summaries = (
+    processed_store.aircraft_summaries() if processed_store is not None else ()
+)
+processed_summary_by_aircraft = {
+    summary.aircraft: summary for summary in processed_summaries
+}
 default_aircraft = aircraft_summaries[0].aircraft
 default_summary = summary_by_aircraft[default_aircraft]
+DEFAULT_DATA_VIEW = "compare" if processed_store is not None else "raw"
 
 app = Dash(
     __name__,
@@ -85,15 +105,23 @@ default_start, default_end, default_step, default_marks = _timeline_configuratio
     default_summary
 )
 default_track = store.load_track(default_aircraft)
+default_processed_track = (
+    processed_store.load_track(default_aircraft)
+    if processed_store is not None
+    else None
+)
 default_view_key = f"{default_aircraft}-{default_start:.6f}-{default_end:.6f}"
 default_time_figure = build_time_series_figure(
     default_track,
-    "geoAltitude",
-    view_revision=f"time-{default_view_key}-geoAltitude",
+    view_revision=f"time-{default_view_key}",
+    processed_track=default_processed_track,
+    data_view=DEFAULT_DATA_VIEW,
 )
 default_spatial_figure = build_spatial_figure(
     default_track,
     view_revision=f"spatial-{default_view_key}",
+    processed_track=default_processed_track,
+    data_view=DEFAULT_DATA_VIEW,
 )
 default_sampling_figure = build_sampling_interval_figure(
     default_track,
@@ -128,7 +156,10 @@ app.layout = html.Div(
                     className="dataset-badge",
                     children=[
                         html.Span(className="status-dot"),
-                        html.Span(f"{DATASET_LABEL} · {SUBSET_LABEL} · Parquet"),
+                        html.Span(
+                            f"{DATASET_LABEL} · {SUBSET_LABEL} · "
+                            + ("Raw + standardized" if processed_store else "Raw Parquet")
+                        ),
                     ],
                 ),
             ],
@@ -148,7 +179,12 @@ app.layout = html.Div(
                                         {
                                             "label": (
                                                 f"Aircraft {summary.aircraft}"
-                                                f"  ·  {summary.point_count:,} observations"
+                                                f"  ·  {summary.point_count:,} raw"
+                                                + (
+                                                    f"  ·  {processed_summary_by_aircraft[summary.aircraft].point_count:,} standardized"
+                                                    if summary.aircraft in processed_summary_by_aircraft
+                                                    else "  ·  no standardized track"
+                                                )
                                             ),
                                             "value": summary.aircraft,
                                         }
@@ -162,19 +198,52 @@ app.layout = html.Div(
                             ],
                         ),
                         html.Div(
-                            className="control-field altitude-field",
+                            className="control-field view-field",
                             children=[
-                                html.Label("Altitude source"),
+                                html.Label("Data view"),
                                 dcc.RadioItems(
-                                    id="altitude-selector",
-                                    className="radio-group",
+                                    id="data-view-selector",
+                                    className="radio-group compact-radio-group",
                                     inputClassName="radio-input",
                                     labelClassName="radio-label",
                                     options=[
-                                        {"label": "Geometric", "value": "geoAltitude"},
-                                        {"label": "Barometric", "value": "baroAltitude"},
+                                        {"label": "Raw", "value": "raw"},
+                                        {
+                                            "label": "Standardized",
+                                            "value": "processed",
+                                            "disabled": processed_store is None,
+                                        },
+                                        {
+                                            "label": "Compare",
+                                            "value": "compare",
+                                            "disabled": processed_store is None,
+                                        },
                                     ],
-                                    value="geoAltitude",
+                                    value=DEFAULT_DATA_VIEW,
+                                    inline=True,
+                                ),
+                                dcc.Checklist(
+                                    id="processed-point-options",
+                                    className="point-option-group",
+                                    inputClassName="radio-input",
+                                    labelClassName="point-option-label",
+                                    options=[
+                                        {
+                                            "label": "Interpolated",
+                                            "value": "interpolated",
+                                            "disabled": processed_store is None,
+                                        },
+                                        {
+                                            "label": "Suspicious",
+                                            "value": "suspicious",
+                                            "disabled": processed_store is None,
+                                        },
+                                    ],
+                                    value=(
+                                        ["interpolated", "suspicious"]
+                                        if processed_store is not None
+                                        else []
+                                    ),
                                     inline=True,
                                 ),
                             ],
@@ -305,7 +374,7 @@ app.layout = html.Div(
                                     className="time-series-graph",
                                     config=GRAPH_CONFIG,
                                     figure=default_time_figure,
-                                    style={"height": "660px", "minHeight": "660px"},
+                                    style={"height": "820px", "minHeight": "820px"},
                                 ),
                             ],
                         ),
@@ -321,7 +390,7 @@ app.layout = html.Div(
                                     className="spatial-graph",
                                     config=GRAPH_CONFIG,
                                     figure=default_spatial_figure,
-                                    style={"height": "660px", "minHeight": "660px"},
+                                    style={"height": "820px", "minHeight": "820px"},
                                 ),
                             ],
                         ),
@@ -335,7 +404,7 @@ app.layout = html.Div(
                             children=[
                                 _figure_heading(
                                     "Sampling interval",
-                                    "Full trajectory · independent of playback",
+                                    "Raw reports · full trajectory · independent of playback",
                                 ),
                                 dcc.Graph(
                                     id="sampling-interval-graph",
@@ -351,7 +420,7 @@ app.layout = html.Div(
                             children=[
                                 _figure_heading(
                                     "Sampling-interval distribution",
-                                    "0–2 s detail · long gaps separated · fit uses detail range",
+                                    "Raw reports · 0–2 s detail · long gaps separated",
                                 ),
                                 dcc.Graph(
                                     id="sampling-distribution-graph",
@@ -367,7 +436,7 @@ app.layout = html.Div(
                             children=[
                                 _figure_heading(
                                     "Global sampling-interval distribution",
-                                    "All aircraft · adjacent intervals computed within each aircraft",
+                                    "Raw reports · adjacent intervals computed within each aircraft",
                                 ),
                                 dcc.Graph(
                                     id="global-sampling-distribution-graph",
@@ -385,7 +454,15 @@ app.layout = html.Div(
         html.Footer(
             children=[
                 html.Span("Trajectory Prediction Research Workspace"),
-                html.Span(f"Source: {SOURCE_LABEL}"),
+                html.Span(
+                    f"Raw: {SOURCE_LABEL}"
+                    + (
+                        f" · Standardized: {PROCESSED_DATA_PATH.relative_to(PROJECT_ROOT).as_posix()}"
+                        if processed_store is not None
+                        and PROCESSED_DATA_PATH.is_relative_to(PROJECT_ROOT)
+                        else ""
+                    )
+                ),
             ]
         ),
     ],
@@ -435,33 +512,60 @@ def update_sampling_figures(aircraft: int):
     Output("playback-button", "children"),
     Output("playback-state", "data"),
     Input("active-aircraft", "data"),
-    Input("altitude-selector", "value"),
+    Input("data-view-selector", "value"),
+    Input("processed-point-options", "value"),
     Input("timeline-slider", "value"),
     State("playback-state", "data"),
 )
 def update_trajectory_view(
     aircraft: int,
-    altitude_field: str,
+    data_view: str,
+    processed_point_options: list[str] | None,
     time_range: list[float],
     playback_state: dict | None,
 ):
     full_track = store.load_track(int(aircraft))
+    full_processed_track = (
+        processed_store.load_track(int(aircraft))
+        if processed_store is not None
+        else None
+    )
+    if processed_store is None:
+        data_view = "raw"
     start_time, end_time = _normalize_time_range(
         time_range,
         summary_by_aircraft[int(aircraft)],
     )
     visible_track = full_track.between(start_time, end_time)
-    view_key = f"{aircraft}-{start_time:.6f}-{end_time:.6f}"
+    visible_processed_track = (
+        full_processed_track.between(start_time, end_time)
+        if full_processed_track is not None
+        else None
+    )
+    point_options = set(processed_point_options or [])
+    view_key = f"{aircraft}-{start_time:.6f}-{end_time:.6f}-{data_view}"
     time_figure = build_time_series_figure(
         visible_track,
-        altitude_field,
-        view_revision=f"time-{view_key}-{altitude_field}",
+        view_revision=f"time-{view_key}",
+        processed_track=visible_processed_track,
+        data_view=data_view,
+        show_interpolated="interpolated" in point_options,
+        show_suspicious="suspicious" in point_options,
     )
     spatial_figure = build_spatial_figure(
         visible_track,
         view_revision=f"spatial-{view_key}",
+        processed_track=visible_processed_track,
+        data_view=data_view,
+        show_interpolated="interpolated" in point_options,
+        show_suspicious="suspicious" in point_options,
     )
-    metadata = _build_metadata(visible_track, full_track, altitude_field)
+    metadata = _build_metadata(
+        visible_track,
+        full_track,
+        visible_processed_track,
+        full_processed_track,
+    )
     automated_slider_change = (
         ctx.triggered_id == "timeline-slider"
         and playback_state
@@ -601,25 +705,63 @@ def _playback_state(
     return state
 
 
-def _build_metadata(track, full_track, altitude_field: str) -> list[html.Div]:
-    altitude = (
-        track.baro_altitude if altitude_field == "baroAltitude" else track.geo_altitude
-    )
-    altitude_count = sum(value is not None for value in altitude)
+def _build_metadata(
+    track,
+    full_track,
+    processed_track,
+    full_processed_track,
+) -> list[html.Div]:
     spatial_count = sum(
         longitude is not None and latitude is not None
         for longitude, latitude in zip(track.longitude, track.latitude, strict=True)
     )
     duration = track.time[-1] - track.time[0] if len(track.time) > 1 else 0.0
-    observation_value = f"{track.point_count:,}"
-    if track.point_count != full_track.point_count:
-        observation_value += f" / {full_track.point_count:,}"
+    raw_observation_value = _visible_total(track.point_count, full_track.point_count)
+
+    if full_processed_track is None or full_processed_track.point_count == 0:
+        processed_point_value = "—"
+        observed_point_value = "—"
+        interpolated_value = "—"
+        segment_value = "—"
+        suspicious_value = "—"
+        trusted_value = "—"
+        split_value = "—"
+    else:
+        visible_processed = processed_track.point_count if processed_track else 0
+        visible_observed = processed_track.observed_point_count if processed_track else 0
+        visible_interpolated = (
+            processed_track.interpolated_point_count if processed_track else 0
+        )
+        visible_segments = processed_track.segment_count if processed_track else 0
+        visible_suspicious = processed_track.suspicious_point_count if processed_track else 0
+        processed_point_value = _visible_total(
+            visible_processed, full_processed_track.point_count
+        )
+        observed_point_value = _visible_total(
+            visible_observed, full_processed_track.observed_point_count
+        )
+        interpolated_value = _visible_total(
+            visible_interpolated, full_processed_track.interpolated_point_count
+        )
+        segment_value = _visible_total(
+            visible_segments, full_processed_track.segment_count
+        )
+        suspicious_value = _visible_total(
+            visible_suspicious, full_processed_track.suspicious_point_count
+        )
+        trusted_value = str(full_processed_track.trusted or "—").title()
+        split_value = str(full_processed_track.split or "—").title()
 
     return [
         _metric("Aircraft ID", str(track.aircraft)),
-        _metric("Observations", observation_value),
-        _metric("Spatial coverage", _percentage(spatial_count, track.point_count)),
-        _metric("Altitude coverage", _percentage(altitude_count, track.point_count)),
+        _metric("Raw observations", raw_observation_value),
+        _metric("Standardized points", processed_point_value),
+        _metric("Observed 1 Hz", observed_point_value),
+        _metric("Interpolated", interpolated_value),
+        _metric("Segments", segment_value),
+        _metric("Suspicious endpoints", suspicious_value),
+        _metric("Quality / split", f"{trusted_value} · {split_value}"),
+        _metric("Raw spatial coverage", _percentage(spatial_count, track.point_count)),
         _metric("Visible duration", _format_duration(duration)),
     ]
 
@@ -642,6 +784,12 @@ def _metric(label: str, value: str) -> html.Div:
         className="metric",
         children=[html.Span(label), html.Strong(value)],
     )
+
+
+def _visible_total(visible: int, total: int) -> str:
+    if visible == total:
+        return f"{total:,}"
+    return f"{visible:,} / {total:,}"
 
 
 def _percentage(numerator: int, denominator: int) -> str:
