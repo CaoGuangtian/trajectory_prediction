@@ -1,0 +1,20 @@
+{
+  "version": "constant_velocity_v1",
+  "dataset_root": "data/openskyDataset",
+  "subsets": [1],
+  "split": "test",
+  "history_seconds": 30,
+  "prediction_horizons_seconds": [1, 5, 10, 20, 30, 60],
+  "origin_stride_seconds": 1,
+  "exclude_interpolated_history": true,
+  "exclude_suspicious_history": true,
+  "minimum_history_points": 5,
+  "minimum_history_span_seconds": 10,
+  "exclude_interpolated_origins": true,
+  "exclude_suspicious_origins": true,
+  "exclude_interpolated_targets": true,
+  "exclude_suspicious_targets": true,
+  "output_root": "outputs/baselines/constant_velocity",
+  "duckdb_memory_limit": "256MB",
+  "duckdb_threads": 1
+}
