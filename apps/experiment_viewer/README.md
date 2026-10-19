@@ -1,6 +1,6 @@
 # Aircraft Trajectory Explorer
 
-本地离线航迹查看器。当前版本同时读取 OpenSky 原始 Parquet 和 1 Hz 标准化轨迹 Parquet，支持按飞机编号筛选、原始/标准化/对比视图、经度、纬度、几何高度、气压高度时间序列和经纬二维轨迹显示。
+本地离线航迹与模型评估查看器。当前版本同时读取 OpenSky 原始 Parquet、1 Hz 标准化轨迹 Parquet 和统一格式的模型评估输出，支持航迹检查以及多模型误差对比。
 
 在项目根目录运行：
 
@@ -39,3 +39,21 @@ $env:TRAJECTORY_PROCESSED_DATA_PATH = "标准化Parquet路径"
 ```
 
 标准化文件不存在时，应用会自动退化为仅原始数据模式。
+
+## 模型评估
+
+应用默认递归扫描 `outputs/` 下的评估 `manifest.yaml`。只要清单声明的
+`metrics_by_horizon` 和 `metrics_by_segment` 文件存在，该次实验就会自动出现在
+“Prediction evaluation”的模型多选框中。
+
+当前评估区域包括：
+
+- 不同模型的误差—预测时域曲线；
+- 各预测时域的目标覆盖率和有效目标数量；
+- 指定预测时域下的航迹段误差箱线图。
+
+如需扫描其他输出根目录，可以在启动前设置：
+
+```powershell
+$env:TRAJECTORY_EVALUATION_ROOT = "模型评估输出根目录"
+```

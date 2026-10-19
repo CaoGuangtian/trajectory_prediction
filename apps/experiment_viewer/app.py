@@ -8,6 +8,11 @@ from time import monotonic
 
 from dash import Dash, Input, Output, State, ctx, dcc, html, no_update
 
+from apps.experiment_viewer.evaluation_figures import (
+    build_evaluation_metric_figure,
+    build_evaluation_sample_figure,
+    build_segment_distribution_figure,
+)
 from apps.experiment_viewer.figures import (
     build_sampling_distribution_figure,
     build_sampling_distribution_from_summary,
@@ -15,7 +20,13 @@ from apps.experiment_viewer.figures import (
     build_spatial_figure,
     build_time_series_figure,
 )
-from apps.experiment_viewer.services import ProcessedTrajectoryStore, TrajectoryStore
+from apps.experiment_viewer.services import (
+    EVALUATION_METRIC_BY_KEY,
+    EVALUATION_METRICS,
+    EvaluationStore,
+    ProcessedTrajectoryStore,
+    TrajectoryStore,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -34,6 +45,9 @@ DEFAULT_PROCESSED_DATA_PATH = (
 )
 PROCESSED_DATA_PATH = Path(
     os.environ.get("TRAJECTORY_PROCESSED_DATA_PATH", DEFAULT_PROCESSED_DATA_PATH)
+).resolve()
+EVALUATION_ROOT = Path(
+    os.environ.get("TRAJECTORY_EVALUATION_ROOT", PROJECT_ROOT / "outputs")
 ).resolve()
 
 try:
@@ -60,6 +74,28 @@ processed_summaries = (
 processed_summary_by_aircraft = {
     summary.aircraft: summary for summary in processed_summaries
 }
+evaluation_store = EvaluationStore(EVALUATION_ROOT)
+evaluation_runs = evaluation_store.runs()
+evaluation_run_by_id = {run.run_id: run for run in evaluation_runs}
+default_evaluation_run_ids = [run.run_id for run in evaluation_runs]
+available_evaluation_metric_keys = evaluation_store.available_metric_keys()
+default_evaluation_metric_key = (
+    "horizontal_rmse_m"
+    if "horizontal_rmse_m" in available_evaluation_metric_keys
+    else (
+        available_evaluation_metric_keys[0]
+        if available_evaluation_metric_keys
+        else "horizontal_rmse_m"
+    )
+)
+evaluation_horizons = sorted(
+    {horizon for run in evaluation_runs for horizon in run.horizons}
+)
+default_evaluation_horizon = (
+    10
+    if 10 in evaluation_horizons
+    else (evaluation_horizons[0] if evaluation_horizons else 1)
+)
 default_aircraft = aircraft_summaries[0].aircraft
 default_summary = summary_by_aircraft[default_aircraft]
 DEFAULT_DATA_VIEW = "compare" if processed_store is not None else "raw"
@@ -135,6 +171,33 @@ global_sampling_distribution = store.global_sampling_distribution()
 global_sampling_distribution_figure = build_sampling_distribution_from_summary(
     global_sampling_distribution,
     view_revision="sampling-distribution-global",
+)
+default_evaluation_series = [
+    (run.label, evaluation_store.horizon_metrics(run.run_id))
+    for run in evaluation_runs
+]
+default_evaluation_metric = EVALUATION_METRIC_BY_KEY[default_evaluation_metric_key]
+default_evaluation_metric_figure = build_evaluation_metric_figure(
+    default_evaluation_series,
+    default_evaluation_metric,
+)
+default_evaluation_sample_figure = build_evaluation_sample_figure(
+    default_evaluation_series
+)
+default_segment_distribution_figure = build_segment_distribution_figure(
+    [
+        (
+            run.label,
+            evaluation_store.segment_metric_values(
+                run.run_id,
+                default_evaluation_metric_key,
+                default_evaluation_horizon,
+            ),
+        )
+        for run in evaluation_runs
+    ],
+    default_evaluation_metric,
+    default_evaluation_horizon,
 )
 app.layout = html.Div(
     className="app-shell",
@@ -397,6 +460,155 @@ app.layout = html.Div(
                     ],
                 ),
                 html.Section(
+                    className="evaluation-section",
+                    children=[
+                        html.Div(
+                            className="section-introduction",
+                            children=[
+                                html.Div(
+                                    children=[
+                                        html.Div("MODEL BENCHMARK", className="eyebrow dark-eyebrow"),
+                                        html.H2("Prediction evaluation"),
+                                        html.P(
+                                            "Compare compatible model runs on the same prediction horizons and inspect how sample availability changes."
+                                        ),
+                                    ]
+                                ),
+                                html.Div(
+                                    className="evaluation-protocol-badge",
+                                    children="Available targets by horizon",
+                                ),
+                            ],
+                        ),
+                        html.Div(
+                            className="evaluation-controls",
+                            children=[
+                                html.Div(
+                                    className="control-field evaluation-model-field",
+                                    children=[
+                                        html.Label("Model runs", htmlFor="evaluation-model-selector"),
+                                        dcc.Dropdown(
+                                            id="evaluation-model-selector",
+                                            options=[
+                                                {
+                                                    "label": (
+                                                        f"{run.label} · {run.split}"
+                                                        + (
+                                                            " · subset "
+                                                            + ", ".join(str(value) for value in run.subset_ids)
+                                                            if run.subset_ids
+                                                            else ""
+                                                        )
+                                                    ),
+                                                    "value": run.run_id,
+                                                }
+                                                for run in evaluation_runs
+                                            ],
+                                            value=default_evaluation_run_ids,
+                                            multi=True,
+                                            clearable=True,
+                                            placeholder="No compatible evaluation outputs found",
+                                        ),
+                                    ],
+                                ),
+                                html.Div(
+                                    className="control-field",
+                                    children=[
+                                        html.Label("Metric", htmlFor="evaluation-metric-selector"),
+                                        dcc.Dropdown(
+                                            id="evaluation-metric-selector",
+                                            options=[
+                                                {
+                                                    "label": metric.label,
+                                                    "value": metric.key,
+                                                }
+                                                for metric in EVALUATION_METRICS
+                                                if metric.key in available_evaluation_metric_keys
+                                            ],
+                                            value=default_evaluation_metric_key,
+                                            clearable=False,
+                                            searchable=False,
+                                        ),
+                                    ],
+                                ),
+                                html.Div(
+                                    className="control-field",
+                                    children=[
+                                        html.Label(
+                                            "Segment distribution horizon",
+                                            htmlFor="evaluation-horizon-selector",
+                                        ),
+                                        dcc.Dropdown(
+                                            id="evaluation-horizon-selector",
+                                            options=[
+                                                {"label": f"{horizon} s", "value": horizon}
+                                                for horizon in evaluation_horizons
+                                            ],
+                                            value=default_evaluation_horizon,
+                                            clearable=False,
+                                            searchable=False,
+                                        ),
+                                    ],
+                                ),
+                            ],
+                        ),
+                        html.Div(
+                            id="evaluation-overview",
+                            className="metric-strip evaluation-metric-strip",
+                        ),
+                        html.Div(
+                            className="evaluation-grid",
+                            children=[
+                                html.Article(
+                                    className="figure-card",
+                                    children=[
+                                        _figure_heading(
+                                            "Error by prediction horizon",
+                                            "One line per selected model run",
+                                        ),
+                                        dcc.Graph(
+                                            id="evaluation-error-graph",
+                                            className="evaluation-graph",
+                                            config=GRAPH_CONFIG,
+                                            figure=default_evaluation_metric_figure,
+                                        ),
+                                    ],
+                                ),
+                                html.Article(
+                                    className="figure-card",
+                                    children=[
+                                        _figure_heading(
+                                            "Evaluation coverage",
+                                            "Coverage and valid target count",
+                                        ),
+                                        dcc.Graph(
+                                            id="evaluation-sample-graph",
+                                            className="evaluation-graph",
+                                            config=GRAPH_CONFIG,
+                                            figure=default_evaluation_sample_figure,
+                                        ),
+                                    ],
+                                ),
+                                html.Article(
+                                    className="figure-card evaluation-distribution-card",
+                                    children=[
+                                        _figure_heading(
+                                            "Segment-level error distribution",
+                                            "Each value is one segment-horizon summary",
+                                        ),
+                                        dcc.Graph(
+                                            id="evaluation-segment-graph",
+                                            className="evaluation-distribution-graph",
+                                            config=GRAPH_CONFIG,
+                                            figure=default_segment_distribution_figure,
+                                        ),
+                                    ],
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+                html.Section(
                     className="sampling-grid",
                     children=[
                         html.Article(
@@ -467,6 +679,46 @@ app.layout = html.Div(
         ),
     ],
 )
+
+
+@app.callback(
+    Output("evaluation-error-graph", "figure"),
+    Output("evaluation-sample-graph", "figure"),
+    Output("evaluation-segment-graph", "figure"),
+    Output("evaluation-overview", "children"),
+    Input("evaluation-model-selector", "value"),
+    Input("evaluation-metric-selector", "value"),
+    Input("evaluation-horizon-selector", "value"),
+)
+def update_evaluation_view(
+    selected_run_ids: list[str] | str | None,
+    metric_key: str | None,
+    horizon_s: int | None,
+):
+    run_ids = _normalize_selected_run_ids(selected_run_ids)
+    metric = EVALUATION_METRIC_BY_KEY.get(
+        metric_key or default_evaluation_metric_key,
+        default_evaluation_metric,
+    )
+    horizon = int(horizon_s or default_evaluation_horizon)
+    selected_runs = [evaluation_run_by_id[run_id] for run_id in run_ids]
+    series = [
+        (run.label, evaluation_store.horizon_metrics(run.run_id))
+        for run in selected_runs
+    ]
+    distributions = [
+        (
+            run.label,
+            evaluation_store.segment_metric_values(run.run_id, metric.key, horizon),
+        )
+        for run in selected_runs
+    ]
+    return (
+        build_evaluation_metric_figure(series, metric),
+        build_evaluation_sample_figure(series),
+        build_segment_distribution_figure(distributions, metric, horizon),
+        _build_evaluation_overview(selected_runs, series, metric.label, horizon),
+    )
 
 
 @app.callback(
@@ -804,6 +1056,58 @@ def _format_duration(value: float) -> str:
     if value < 3600:
         return f"{value / 60:.1f} min"
     return f"{value / 3600:.2f} h"
+
+
+def _normalize_selected_run_ids(value: list[str] | str | None) -> list[str]:
+    if value is None:
+        return []
+    values = [value] if isinstance(value, str) else value
+    return [run_id for run_id in values if run_id in evaluation_run_by_id]
+
+
+def _build_evaluation_overview(runs, series, metric_label: str, horizon_s: int):
+    horizon_rows = [
+        row
+        for _label, rows in series
+        for row in rows
+        if int(row["horizon_s"]) == int(horizon_s)
+    ]
+    targets = [int(row.get("evaluated_targets") or 0) for row in horizon_rows]
+    coverages = [float(row.get("coverage") or 0.0) for row in horizon_rows]
+    splits = sorted({run.split for run in runs})
+    protocols = {run.evaluation_protocol for run in runs}
+    return [
+        _metric("Selected runs", str(len(runs))),
+        _metric("Metric", metric_label),
+        _metric("Distribution horizon", f"{int(horizon_s)} s"),
+        _metric("Evaluated targets", _format_integer_range(targets)),
+        _metric("Coverage", _format_percentage_range(coverages)),
+        _metric("Split / protocol", _evaluation_scope_label(splits, protocols)),
+    ]
+
+
+def _format_integer_range(values: list[int]) -> str:
+    if not values:
+        return "—"
+    minimum, maximum = min(values), max(values)
+    if minimum == maximum:
+        return f"{minimum:,}"
+    return f"{minimum:,}–{maximum:,}"
+
+
+def _format_percentage_range(values: list[float]) -> str:
+    if not values:
+        return "—"
+    minimum, maximum = min(values), max(values)
+    if abs(minimum - maximum) < 0.00005:
+        return f"{minimum:.1%}"
+    return f"{minimum:.1%}–{maximum:.1%}"
+
+
+def _evaluation_scope_label(splits: list[str], protocols: set[str]) -> str:
+    split_label = ", ".join(splits) if splits else "—"
+    protocol_label = "compatible" if len(protocols) <= 1 else "mixed rules"
+    return f"{split_label} · {protocol_label}"
 
 
 if __name__ == "__main__":

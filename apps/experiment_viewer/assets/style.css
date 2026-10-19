@@ -402,6 +402,99 @@ main {
   min-height: 820px;
 }
 
+.evaluation-section {
+  margin-top: 14px;
+  padding: 22px;
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.section-introduction {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+}
+
+.section-introduction h2 {
+  margin: 3px 0 5px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 23px;
+  font-weight: 600;
+}
+
+.section-introduction p {
+  max-width: 760px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.dark-eyebrow {
+  color: var(--accent);
+}
+
+.evaluation-protocol-badge {
+  padding: 7px 10px;
+  color: #344054;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.evaluation-controls {
+  display: grid;
+  grid-template-columns: minmax(360px, 1.55fr) minmax(240px, 0.85fr) minmax(220px, 0.7fr);
+  gap: 18px;
+  padding: 16px 18px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.evaluation-model-field .Select-value,
+.evaluation-model-field .select__multi-value {
+  font-size: 12px;
+}
+
+.evaluation-metric-strip {
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  margin: 12px 0;
+}
+
+.evaluation-metric-strip .metric:nth-child(5n) {
+  border-right: 1px solid var(--line);
+}
+
+.evaluation-metric-strip .metric:nth-child(6n) {
+  border-right: 0;
+}
+
+.evaluation-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.evaluation-distribution-card {
+  grid-column: 1 / -1;
+}
+
+.evaluation-graph {
+  height: 430px !important;
+  min-height: 430px;
+}
+
+.evaluation-distribution-graph {
+  height: 390px !important;
+  min-height: 390px;
+}
+
 .sampling-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -440,6 +533,34 @@ footer {
     grid-template-columns: 1fr;
   }
 
+  .evaluation-controls {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .evaluation-model-field {
+    grid-column: 1 / -1;
+  }
+
+  .evaluation-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .evaluation-distribution-card {
+    grid-column: auto;
+  }
+
+  .evaluation-metric-strip {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .evaluation-metric-strip .metric:nth-child(3n) {
+    border-right: 0;
+  }
+
+  .evaluation-metric-strip .metric:nth-child(n + 4) {
+    border-top: 1px solid var(--line);
+  }
+
   .spatial-card {
     min-height: 600px;
   }
@@ -474,8 +595,22 @@ footer {
   }
 
   .control-panel,
-  .metric-strip {
+  .metric-strip,
+  .evaluation-controls {
     grid-template-columns: 1fr;
+  }
+
+  .evaluation-section {
+    padding: 14px;
+  }
+
+  .section-introduction {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .evaluation-model-field {
+    grid-column: auto;
   }
 
   .metric,

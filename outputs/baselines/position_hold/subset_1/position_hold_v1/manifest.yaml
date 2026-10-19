@@ -1,0 +1,61 @@
+{
+  "artifact": "position_hold_baseline_evaluation",
+  "created_at_utc": "2026-10-19T02:49:09.762732+00:00",
+  "configuration": {
+    "version": "position_hold_v1",
+    "dataset_root": "data/openskyDataset",
+    "subsets": [
+      1
+    ],
+    "split": "test",
+    "history_seconds": 30,
+    "prediction_horizons_seconds": [
+      1,
+      5,
+      10,
+      20,
+      30,
+      60
+    ],
+    "origin_stride_seconds": 1,
+    "exclude_interpolated_origins": true,
+    "exclude_suspicious_origins": true,
+    "exclude_interpolated_targets": true,
+    "exclude_suspicious_targets": true,
+    "output_root": "outputs/baselines/position_hold",
+    "duckdb_memory_limit": "512MB",
+    "duckdb_threads": 1,
+    "config_hash": "e9019d066dfa"
+  },
+  "sources": [
+    {
+      "subset": 1,
+      "path": "D:/code/trajectory_prediction/data/openskyDataset/subset_1/standardized_1hz/set_1_standardized_1hz.parquet",
+      "manifest": "D:/code/trajectory_prediction/data/openskyDataset/subset_1/standardized_1hz/manifest.yaml",
+      "preprocessing_version": "opensky_standardized_1hz_v2",
+      "preprocessing_config_hash": "4436a9791b49"
+    }
+  ],
+  "outputs": {
+    "metrics_by_horizon": "D:/code/trajectory_prediction/outputs/baselines/position_hold/subset_1/position_hold_v1/metrics_by_horizon.csv",
+    "metrics_by_segment": "D:/code/trajectory_prediction/outputs/baselines/position_hold/subset_1/position_hold_v1/metrics_by_segment.parquet"
+  },
+  "statistics": {
+    "selected_subsets": [
+      1
+    ],
+    "evaluated_segments": 526,
+    "segment_horizon_rows": 3156,
+    "candidate_predictions": 3104613,
+    "evaluated_targets": 2793169,
+    "overall_target_coverage": 0.8996834710155501
+  },
+  "notes": [
+    "The prediction at every horizon is the last observed position at the forecast origin.",
+    "Horizontal error uses the WGS84 longitude/latitude great-circle distance in metres.",
+    "Vertical error uses geometric altitude; barometric-altitude error is auxiliary.",
+    "Prediction windows never cross segment_id boundaries.",
+    "No per-origin prediction rows or model-input windows are persisted.",
+    "JSON syntax is used because JSON is a valid YAML 1.2 subset."
+  ]
+}
