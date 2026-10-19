@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class PatchTSTModelTests(unittest.TestCase):
     def test_forward_shape_and_masked_loss(self) -> None:
         import torch
+        from torch import nn
 
         from trajectory_prediction.models.patchtst import load_patchtst_config
         from trajectory_prediction.models.patchtst.loss import masked_huber_components
@@ -19,7 +20,16 @@ class PatchTSTModelTests(unittest.TestCase):
         from trajectory_prediction.models.patchtst.runtime import resolve_runtime_device
 
         config = load_patchtst_config(ROOT / "configs/models/patchtst_raw_v1.yaml")
+        self.assertEqual(config.implementation_version, "reference_aligned_patchtst_backbone_v1")
+        self.assertEqual(config.encoder_normalization, "BatchNorm")
+        self.assertTrue(config.residual_attention)
+        self.assertFalse(config.pre_norm)
         model = TrajectoryPatchTST(config)
+        self.assertEqual(len(model.backbone.encoder.encoder.layers), 3)
+        self.assertIsInstance(
+            model.backbone.encoder.encoder.layers[0].attention_norm.normalization,
+            nn.BatchNorm1d,
+        )
         history = torch.randn(2, 60, 3)
         prediction = model(history)
         self.assertEqual(tuple(prediction.shape), (2, 60, 3))

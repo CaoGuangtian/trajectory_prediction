@@ -41,6 +41,11 @@ class PatchTSTConfig:
     attention_dropout: float
     head_dropout: float
     individual_heads: bool
+    encoder_normalization: str
+    residual_attention: bool
+    pre_norm: bool
+    positional_encoding: str
+    learn_positional_encoding: bool
     revin_enabled: bool
     revin_affine: bool
     revin_subtract_last: bool
@@ -93,6 +98,11 @@ class PatchTSTConfig:
             "attention_dropout": self.attention_dropout,
             "head_dropout": self.head_dropout,
             "individual_heads": self.individual_heads,
+            "encoder_normalization": self.encoder_normalization,
+            "residual_attention": self.residual_attention,
+            "pre_norm": self.pre_norm,
+            "positional_encoding": self.positional_encoding,
+            "learn_positional_encoding": self.learn_positional_encoding,
             "revin_enabled": self.revin_enabled,
             "revin_affine": self.revin_affine,
             "revin_subtract_last": self.revin_subtract_last,
@@ -161,6 +171,11 @@ def load_patchtst_config(path: Path) -> PatchTSTConfig:
         attention_dropout=float(required("attention_dropout")),
         head_dropout=float(required("head_dropout")),
         individual_heads=bool(required("individual_heads")),
+        encoder_normalization=str(required("encoder_normalization")),
+        residual_attention=bool(required("residual_attention")),
+        pre_norm=bool(required("pre_norm")),
+        positional_encoding=str(required("positional_encoding")),
+        learn_positional_encoding=bool(required("learn_positional_encoding")),
         revin_enabled=bool(required("revin_enabled")),
         revin_affine=bool(required("revin_affine")),
         revin_subtract_last=bool(required("revin_subtract_last")),
@@ -213,6 +228,10 @@ def _validate(config: PatchTSTConfig) -> None:
         raise ValueError("Encoder depth and feedforward dimension must be positive.")
     if any(not 0 <= value < 1 for value in (config.dropout, config.attention_dropout, config.head_dropout)):
         raise ValueError("Dropout values must be in [0, 1).")
+    if config.encoder_normalization.lower() not in {"batchnorm", "layernorm"}:
+        raise ValueError("encoder_normalization must be BatchNorm or LayerNorm.")
+    if config.positional_encoding.lower() not in {"zeros", "sincos"}:
+        raise ValueError("positional_encoding must be zeros or sincos.")
     if min(config.batch_size, config.evaluation_batch_size, config.maximum_epochs, config.early_stopping_patience) < 1:
         raise ValueError("Batch sizes, epochs, and patience must be positive.")
     if min(config.learning_rate, config.huber_delta) <= 0 or config.weight_decay < 0:

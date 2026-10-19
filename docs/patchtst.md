@@ -12,7 +12,7 @@
 - 主实验不按 `trusted` 过滤，窗口不跨 `segment_id`；
 - 插值或异常速度目标通过损失掩码排除，但不会删除整个预测起点。
 
-模型采用 PatchTST 的 patching 和 channel-independent 设计，并使用 RevIN、直接多步预测和 masked Huber loss。实现针对本项目重新编写，没有复用参考仓库的数据切分、全轨迹平滑或逐轮测试逻辑。
+模型骨架与官方 PatchTST 参考实现对齐，保留 patching、channel-independent encoder、residual attention、BatchNorm、可学习位置编码、RevIN 和 flatten prediction head；项目侧继续使用直接多步预测和 masked Huber loss。没有复用参考仓库的数据切分、全轨迹平滑或逐轮测试逻辑。
 
 ## Python 环境
 
@@ -83,5 +83,5 @@ python -s -m trajectory_prediction.cli.evaluate_patchtst --subset 1 --device aut
 
 ## 参考实现
 
-架构设计参考本地 `D:\code\RealTimeTrajectory\reference\patchTST` 中的官方 PatchTST 实现。其通用 CSV 数据集、随机拆分和平滑代码不适用于本项目，未被接入。
+模型骨架适配自本地 `D:\code\RealTimeTrajectory\reference\patchTST` 中的官方 PatchTST 实现，具体许可和修改范围见 `THIRD_PARTY_NOTICES.md`。其通用 CSV 数据集、随机拆分、平滑代码和实验循环不适用于本项目，未被接入。
 
