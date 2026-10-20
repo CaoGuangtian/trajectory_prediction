@@ -43,8 +43,8 @@ class PatchTSTDataTests(unittest.TestCase):
                         "geoAltitude": 1000.0 + point * 2.0,
                         "trusted": "unknown",
                         "split": split,
-                        "is_interpolated": False,
-                        "is_speed_suspicious": point == 119,
+                        "is_interpolated": point == 10,
+                        "is_speed_suspicious": point in {20, 119},
                     }
                 )
         pq.write_table(pa.Table.from_pylist(rows), self.parquet_path)
@@ -64,7 +64,11 @@ class PatchTSTDataTests(unittest.TestCase):
         self.assertEqual(len(corpus), 6)
         batch = corpus.batch([0])
         self.assertEqual(batch.history_enu.shape, (1, 60, 3))
+        self.assertEqual(batch.history_observation_mask.shape, (1, 60))
         self.assertEqual(batch.future_enu.shape, (1, 60, 3))
+        self.assertFalse(batch.history_observation_mask[0, 10])
+        self.assertFalse(batch.history_observation_mask[0, 20])
+        self.assertTrue(batch.history_observation_mask[0, 30])
         np.testing.assert_allclose(batch.history_enu[0, -1], 0.0, atol=1e-5)
         self.assertGreater(batch.future_enu[0, 0, 0], 0.0)
         self.assertEqual(int(batch.origin_indices[0]), 59)

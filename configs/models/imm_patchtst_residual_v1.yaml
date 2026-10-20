@@ -1,0 +1,12 @@
+{
+  "version": "imm_patchtst_residual_v1",
+  "implementation_version": "standard_imm_patchtst_residual_v1",
+  "model_type": "imm_patchtst",
+  "display_name": "IMM + PatchTST Residual",
+  "fusion_mode": "residual",
+  "patchtst_config": "configs/models/patchtst_raw_v1.yaml",
+  "imm_config": "configs/models/standard_imm_v1.yaml",
+  "cache_root": "outputs/cache/imm_patchtst",
+  "cache_batch_size": 1024,
+  "output_root": "outputs/models/imm_patchtst"
+}

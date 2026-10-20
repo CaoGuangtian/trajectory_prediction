@@ -84,6 +84,9 @@ class TrajectorySegment:
 @dataclass(frozen=True, slots=True)
 class WindowBatch:
     history_enu: np.ndarray
+    history_observation_mask: np.ndarray
+    history_is_interpolated: np.ndarray
+    history_is_suspicious: np.ndarray
     future_enu: np.ndarray
     target_mask: np.ndarray
     segment_indices: np.ndarray
@@ -166,6 +169,12 @@ class TrajectoryWindowCorpus:
         history_points = self.config.history_points
         prediction_points = self.config.prediction_points
         history = np.empty((batch_size, history_points, 3), dtype=np.float32)
+        history_is_interpolated = np.empty(
+            (batch_size, history_points), dtype=bool
+        )
+        history_is_suspicious = np.empty(
+            (batch_size, history_points), dtype=bool
+        )
         future = np.empty((batch_size, prediction_points, 3), dtype=np.float32)
         target_mask = np.empty((batch_size, prediction_points), dtype=bool)
         origin_longitude = np.empty(batch_size, dtype=np.float64)
@@ -201,6 +210,8 @@ class TrajectoryWindowCorpus:
                 * EARTH_MEAN_RADIUS_M
             )
             history[rows, :, 2] = segment.geo_altitude[history_indices] - alt0[:, None]
+            history_is_interpolated[rows] = segment.is_interpolated[history_indices]
+            history_is_suspicious[rows] = segment.is_suspicious[history_indices]
             future[rows, :, 0] = (
                 np.radians(segment.longitude[future_indices] - lon0[:, None])
                 * EARTH_MEAN_RADIUS_M
@@ -233,6 +244,11 @@ class TrajectoryWindowCorpus:
             future /= scale_array
         return WindowBatch(
             history_enu=history,
+            history_observation_mask=(
+                ~history_is_interpolated & ~history_is_suspicious
+            ),
+            history_is_interpolated=history_is_interpolated,
+            history_is_suspicious=history_is_suspicious,
             future_enu=future,
             target_mask=target_mask,
             segment_indices=segment_indices.copy(),
